@@ -1,11 +1,11 @@
 --- Simple program to be used as an installer script. Copy to repos and insert what is needed.
 
 local to_get = {
-  "L:lib/broadcast_handler.lua:broadcast_handler.lua",
+  "extern:lib/broadcast_handler.lua:https://raw.githubusercontent.com/Fatboychummy-CC/SimplifyDigging/refs/heads/main/lib/broadcast_handler.lua",
+  "extern:dig.lua:https://raw.githubusercontent.com/Fatboychummy-CC/SimplifyDigging/refs/heads/main/dig.lua",
   "L:lib/filesystem.lua:filesystem.lua",
   "L:lib/simple_argparse.lua:simple_argparse.lua",
   "L:lib/minilogger.lua:minilogger.lua",
-  "extern:dig.lua:https://raw.githubusercontent.com/Fatboychummy-CC/SimplifyDigging/refs/heads/main/dig.lua",
 }
 local program_name = "Simplify Digging 2.0"
 local pinestore_id = nil -- Set this to the ID of the pinestore project if you wish to note to pinestore that a download has occurred.
