@@ -121,15 +121,13 @@ local map = {
   sphere = "sphere",
 }
 
-if not shape then
-  log.error("No shape specified. Valid options are: cuboid, tunnel, staircase, sphere.")
-  return
-end
-
-local shape_type = map[shape]
-if not shape_type then
-  log.error("Invalid shape specified: '%s'. Valid options are: cuboid, tunnel, staircase, sphere.", shape)
-  return
+local shape_type
+if shape then
+  shape_type = map[shape]
+  if not shape_type then
+    log.error("Invalid shape specified: '%s'. Valid options are: cuboid, tunnel, staircase, sphere.", shape)
+    return
+  end
 end
 
 -- Add shape-specific arguments.
@@ -194,6 +192,13 @@ end
 
 
 
+--- Displays the main user interface.
+local function main_ui()
+
+end
+
+
+
 -- Execute the appropriate digging function.
 if shape_type == "cuboid" then
   dig_cuboid()
@@ -201,6 +206,8 @@ elseif shape_type == "staircase" then
   dig_staircase()
 elseif shape_type == "sphere" then
   dig_sphere()
+elseif not shape_type then
+  main_ui()
 else
   log.error("Unsupported shape type: '%s'.", shape_type)
 end
