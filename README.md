@@ -1,5 +1,8 @@
 # SimplifyDigging 2.0
 
+> [!WARNING]
+> This program is stil in development, and may outright not work or have major bugs. Use at your own risk.
+
 SimplifyDigging is a ComputerCraft program designed to make digging various shapes with a turtle easy and efficient.
 
 ## Features
@@ -37,7 +40,7 @@ dig.lua cuboid 10 5 3 --right --up --save="/state.txt"
 
 This command would start digging a cuboid of dimensions 10x5x3, oriented to the right and upwards, using `/state.txt` to track progress.
 
-> [!NOTE]
+> [!IMPORTANT]
 > Both `--save` and `--file` flags are used to specify the state file path, but `--save` tells the turtle to **create** a new state file, while `--file` tells it to **load** an existing state file.
 > They are mutually exclusive; you should only use one or the other.
 
