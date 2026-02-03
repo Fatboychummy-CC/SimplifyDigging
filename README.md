@@ -46,17 +46,22 @@ This command would start digging a cuboid of dimensions 10x5x3, oriented to the 
 
 ### Command Reference
 
-- `dig.lua cuboid <forward length> <height> <width> [flags] [options=values]`
+- `dig.lua cuboid <forward length> <width> [height] [flags] [options=values]`
   - Digs a cuboid with the specified dimensions.
+  - If height is not specified, it will dig until it hits bedrock.
+  - The turtle will dig to the right and downwards by default.
+  - Alias: `cube`
+  - Alias: `box`
   - Alias: `tunnel`
-- `dig.lua staircase <steps> [flags] [options=values]`
+  - Alias: `quarry`
+- `dig.lua staircase <steps> [passage height=3] [flags] [options=values]`
   - Digs a staircase with the specified number of steps.
+  - The staircase will go downwards by default, and is only one block wide.
+  - Alias: `stair`
+  - Alias: `stairs`
 - `dig.lua sphere <radius> [flags] [options=values]`
   - Digs a sphere with the specified radius.
-- `dig.lua quarry <length> <width> [max-depth] [flags] [options=values]`
-  - Digs a quarry with the specified dimensions.
-  - Max depth is optional; if not provided, it will dig until it can no longer dig down.
-  - If max-depth is provided, the turtle will return to the surface after reaching that depth, or when it can no longer dig down, whichever comes first.
+  - The turtle will dig to the right and downwards by default.
 
 #### Flag Reference
 - `--left`/`-l`
@@ -67,6 +72,12 @@ This command would start digging a cuboid of dimensions 10x5x3, oriented to the 
   - Orient the shape downwards.
 - `--up`/`-u`
   - Orient the shape upwards.
+- `--fuel`/`-f`
+  - Allows the turtle to refuel itself automatically on items it finds underground (like coal, etc.).
+  - By default, the turtle will not refuel itself to avoid consuming valuable items.
+  - If the turtle has an empty bucket in its inventory, it will also use that to collect lava for refueling.
+- `--no-inv`/`-n`
+  - Disables automatic inventory management. Instead, the turtle will dump every item it collects.
 
 #### Option Reference
 - `--file="<path>"`
@@ -76,3 +87,11 @@ This command would start digging a cuboid of dimensions 10x5x3, oriented to the 
 - `--broadcast="</path/to/handler>"`
   - Specifies a path to a file that will handle broadcasting status updates from the turtle.
   - A basic handler can be found in [`lib/broadcast_handler.lua`](lib/broadcast_handler.lua), but you can specify your own for security or customization reasons.
+  - Broadcasts are useful for monitoring the turtle's progress remotely, especially if it gets stuck or needs attention.
+- `--loglevel="<level>"`
+  - Sets the logging level for the program. Valid levels are:
+    - `debug`
+    - `info`
+    - `warning`
+    - `error`
+  - The default logging level is `info`.
