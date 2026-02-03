@@ -38,7 +38,6 @@ dig.lua cuboid 10 5 3 --right --up --save="/state.txt"
 This command would start digging a cuboid of dimensions 10x5x3, oriented to the right and upwards, using `/state.txt` to track progress.
 
 > [!NOTE]
-
 > Both `--save` and `--file` flags are used to specify the state file path, but `--save` tells the turtle to **create** a new state file, while `--file` tells it to **load** an existing state file.
 > They are mutually exclusive; you should only use one or the other.
 
