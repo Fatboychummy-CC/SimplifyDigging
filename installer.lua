@@ -6,6 +6,9 @@ local to_get = {
   "L:lib/filesystem.lua:filesystem.lua",
   "L:lib/simple_argparse.lua:simple_argparse.lua",
   "L:lib/minilogger.lua:minilogger.lua",
+
+  -- CCryptoLib automatically installs to `ccryptolib` folder, so it just needs to be in `lib`.
+  --"I:https://raw.githubusercontent.com/Fatboychummy-CC/etc-programs/refs/heads/main/installers/ccryptolib.lua:lib"
 }
 local program_name = "Simplify Digging 2.0"
 local pinestore_id = nil -- Set this to the ID of the pinestore project if you wish to note to pinestore that a download has occurred.
@@ -20,7 +23,7 @@ local pinestore_id = nil -- Set this to the ID of the pinestore project if you w
 -- Explanation of diffs is below.
 local use_diffs = true
 
--- The 'diffs' are used to determine which files are needed to download for 
+-- The 'diffs' are used to determine which files are needed to download for
 -- whichever version of the program you wish to install.
 -- The key is the name of the version you wish to install, and the table it
 -- resolves to should be filled with strings containing either the name of
@@ -43,7 +46,7 @@ local diffs = {
   What version do you wish to install?
   - all
   - no_broadcast
-  > 
+  >
 ]]
 
 -- #########################################
@@ -86,25 +89,29 @@ local function parse_pinestore_response(data)
   return response
 end
 
+local function download(url)
+  local handle, err = http.get(url) --[[@as ccTweaked.http.Response?]]
+  if handle then
+    local data = handle.readAll()
+    handle.close()
+    return data
+  else
+    error(("Failed to connect: %s"):format(err), 0)
+  end
+end
+
 local function download_file(url, filename)
   print("Downloading", filename)
-  local h_handle, err = http.get(url) --[[@as ccTweaked.http.Response]]
-  if h_handle then
-    local data = h_handle.readAll()
-    h_handle.close()
-
-    local f_handle, err2 = fs.open(fs.combine(p_dir, filename), 'w') --[[@as ccTweaked.fs.WriteHandle]]
-    if f_handle then
-      f_handle.write(data)
-      f_handle.close()
-      print("Done.")
-      return
-    end
-    printError(url)
-    error(("Failed to write file: %s"):format(err2), 0)
+  local data = download(url)
+  local f_handle, err2 = fs.open(fs.combine(p_dir, filename), 'w') --[[@as ccTweaked.fs.WriteHandle?]]
+  if f_handle then
+    f_handle.write(data)
+    f_handle.close()
+    print("Done.")
+    return
   end
   printError(url)
-  error(("Failed to connect: %s"):format(err), 0)
+  error(("Failed to write file: %s"):format(err2), 0)
 end
 
 local function get_version_to_download()
@@ -225,6 +232,8 @@ local function get(...)
     local extern_file, extern_url = remote:match("^extern:(.-):(.+)$")
     local paste_file, paste = remote:match("^paste:(.-):(.+)$")
     local local_file, remote_file = remote:match("^L:(.-):(.+)$")
+    local command = remote:match("^C:(.+)$")
+    local remote_installer = remote:match("^I:(.+)$")
     local use_libraries = true
 
     if not local_file then
@@ -245,6 +254,26 @@ local function get(...)
         download_file(RAW_URL_LIBRARIES .. remote_file, local_file)
       else
         download_file(RAW_URL_PROGRAMS .. remote_file, local_file)
+      end
+    elseif command then
+      local ok = shell.run(command)
+      if not ok then
+        error(("Command '%s' failed."):format(command), 0)
+      end
+    elseif remote_installer then
+      local installer = download(remote_installer)
+      if not installer then
+        error(("Failed to download installer from '%s'."):format(remote_installer), 0)
+      end
+
+      local func, err = load(installer, "remote-installer", "t", _ENV)
+      if func then
+        local ok, err2 = pcall(func, p_dir)
+        if not ok then
+          error(("Remote installer from '%s' failed: %s"):format(remote_installer, err2), 0)
+        end
+      else
+        error(("Failed to compile remote installer from '%s': %s"):format(remote_installer, err), 0)
       end
     else
       error(("Could not determine information for '%s'"):format(remote), 0)
@@ -313,7 +342,6 @@ if key == keys.y then
         -- Too many requests, something else logged a download already.
         -- We don't need to do anything here, but we'll leave this blank if
         -- statement here for clarity.
-        print_warning("Too many requests to PineStore to log a download.")
       else
         print_warning("Failed to connect to PineStore:", err)
       end
