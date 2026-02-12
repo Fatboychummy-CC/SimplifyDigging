@@ -73,7 +73,7 @@ parser.add_flag(
 )
 parser.add_flag(
   "n",
-  "no_inv",
+  "noinv",
   "Disables automatic inventory management, dumping every item in the inventory."
 )
 parser.add_option(
@@ -137,19 +137,19 @@ end
 -- Add shape-specific arguments.
 if shape_type == "cuboid" then
   parser.add_option(
-    "forward_length",
+    "forwardlength",
     "The length to dig forward.",
-    true
+    16
   )
   parser.add_option(
     "width",
     "The width to dig.",
-    true
+    16
   )
   parser.add_option(
     "height",
     "The height to dig. If not specified, will dig until bedrock.",
-    false
+    16
   )
   parser.add_flag(
     "q",
@@ -159,14 +159,14 @@ if shape_type == "cuboid" then
 
 elseif shape_type == "staircase" then
   parser.add_option(
-    "steps",
+    "forwardlength",
     "The number of steps to dig.",
-    true
+    16
   )
   parser.add_option(
     "height",
     "The height of the passage for each step. Default is 3.",
-    false
+    3
   )
   parser.add_flag(
     "s",
@@ -179,15 +179,15 @@ elseif shape_type == "staircase" then
     "If set, the turtle will place torches in the staircase for lighting (requires torches in inventory)."
   )
   parser.add_option(
-    "torch_interval",
+    "torchinterval",
     "The interval (in steps) at which to place torches if enabled.",
     10
   )
 elseif shape_type == "bridge" then
   parser.add_option(
-    "length",
+    "forwardlength",
     "The length to dig the bridge.",
-    true
+    16
   )
   parser.add_flag(
     "s",
@@ -205,7 +205,7 @@ elseif shape_type == "bridge" then
     "If set, the turtle will place torches on the bridge for lighting (requires torches in inventory)."
   )
   parser.add_option(
-    "torch_interval",
+    "torchinterval",
     "The interval (in blocks) at which to place torches if enabled.",
     16
   )
@@ -231,7 +231,7 @@ local function setup_reboot()
       startup_dir:mkdir()
     end
 
-    local reboot_file = startup_dir:file("99991_simplifydig_reboot.lua")
+    local reboot_file = startup_dir:file("9999_simplifydig_reboot.lua")
     local running_program = shell.getRunningProgram()
     local flags = ""
     for flag, value in pairs(parsed.flags) do
@@ -242,6 +242,7 @@ local function setup_reboot()
     local options = ""
     for option, value in pairs(parsed.options) do
       log.infof("Option %s=%s", option, tostring(value))
+      if option == "save" then option = "load" end -- The reboot file should mark the file to load from.
       options = options .. ("--%s=%s "):format(option, tostring(value))
     end
 
@@ -270,7 +271,7 @@ local function cleanup_reboot()
   log.info("Cleaning up reboot files.")
 
   local startup_dir = root:at("startup")
-  local reboot_file = startup_dir:file("99991_simplifydig_reboot.lua")
+  local reboot_file = startup_dir:file("9999_simplifydig_reboot.lua")
   if reboot_file:exists() then
     reboot_file:delete()
   end
@@ -293,15 +294,15 @@ end
 
 --- Cuboid digging function
 local function dig_cuboid()
-  log.infof("Starting cuboid dig with parameters:\n  forward_length=%d\n  width=%d\n  height=%s\n  quarry=%s\n  left_right=%s\n  up_down=%s\n  fuel=%s\n  no_inv=%s\n  broadcast_file=%s\n  log_level=%s",
-    parsed.options.forward_length or -1,
+  log.infof("Starting cuboid dig with parameters:\n  forwardlength=%d\n  width=%d\n  height=%s\n  quarry=%s\n  left_right=%s\n  up_down=%s\n  fuel=%s\n  noinv=%s\n  broadcast_file=%s\n  log_level=%s",
+    parsed.options.forwardlength or -1,
     parsed.options.width or -1,
     parsed.options.height or "infinite",
     parsed.flags.quarry and "true" or "false",
     parsed.flags.left and "left" or "right",
     parsed.flags.up and "up" or "down",
     parsed.flags.fuel and "true" or "false",
-    parsed.flags.no_inv and "true" or "false",
+    parsed.flags.noinv and "true" or "false",
     parsed.options.broadcast or "None",
     parsed.options.loglevel or "info"
   )
@@ -312,15 +313,15 @@ local function dig_cuboid()
   end
 
   local function forward()
-    repeat turtle.dig() until dtr:forward()
+    repeat dtr:dig() until dtr:forward()
   end
 
   local function up()
-    repeat turtle.digUp() until dtr:up()
+    repeat dtr:dig_up() until dtr:up()
   end
 
   local function down()
-    repeat turtle.digDown() until dtr:down()
+    repeat dtr:dig_down() until dtr:down()
   end
 
   local function left()
@@ -331,20 +332,35 @@ local function dig_cuboid()
     dtr:turn_right()
   end
 
+  local function dig()
+    dtr:dig()
+  end
+
+  local function dig_up()
+    dtr:dig_up()
+  end
+
+  local function dig_down()
+    dtr:dig_down()
+  end
+
   -- Initialization:
   -- 1. Determine which way we want to turn based off arguments.
   -- 2. Determine if we're going up or down based off arguments.
   local turn = parsed.flags.left and left or right
   local vertical_move = parsed.flags.up and up or down
-  local duo_vertical_dig = parsed.flags.up and turtle.digUp or turtle.digDown
-  local n_duo_vertical_dig = parsed.flags.up and turtle.digDown or turtle.digUp
+  local duo_vertical_dig = parsed.flags.up and dig_up or dig_down
+  local n_duo_vertical_dig = parsed.flags.up and dig_down or dig_up
 
   -- Pull the values from arguments
-  local forward_length = tonumber(parsed.options.forward_length)
+  local forward_length = tonumber(parsed.options.forwardlength)
   local width = tonumber(parsed.options.width)
   local height = parsed.flags.quarry and math.huge or tonumber(parsed.options.height) or math.huge
-  local no_inv = parsed.flags.no_inv
+  local no_inv = parsed.flags.noinv
   local fuel = parsed.flags.fuel
+  if parsed.options.loglevel ~= "info" then
+    minilogger.set_log_level(minilogger.LOG_LEVELS[parsed.options.loglevel:upper()])
+  end
 
   local function count_slots()
     local n = 0
@@ -366,7 +382,9 @@ local function dig_cuboid()
           -- Attempt to refuel before dropping it.
           -- We also refuel if no_inv is enabled, since we'd just be throwing
           -- away the item anyways.
-          turtle.refuel(64)
+          if turtle.refuel(64) then
+            dtr:refueled()
+          end
         end
         turtle.drop()
       end
@@ -380,8 +398,14 @@ local function dig_cuboid()
       sleep(10)
     end
 
-    while count_slots() > 0 do
+    while true do
       drop()
+      if count_slots() == 0 then
+        break
+      else
+        log.warn("Inventory still not empty after dumping...")
+        sleep(10)
+      end
     end
   end
 
@@ -402,21 +426,27 @@ local function dig_cuboid()
   local function get_next_move()
     -- If we're recovering and we have recorded a return to surface, simulate that return.
     if dtr:should_return_to_surface() then
+      log.debug("Return to surface caused by DTR recovery.")
       return return_to_surface
     end
 
-    -- If the inventory is full, either dump it or return and dump it.
-    if count_slots() == 16 then
-      if no_inv then
-        drop()
-      else
+
+    if not dtr.simulating then
+      -- If the inventory is full, either dump it or return and dump it.
+      if count_slots() == 16 then
+        if no_inv then
+          drop()
+        else
+          log.debug("Return to surface caused by full inventory.")
+          return return_to_surface
+        end
+      end
+
+      -- If we are running low on fuel, return to the surface.
+      if dtr:should_refuel() then
+        log.debug("Return to surface caused by low fuel.")
         return return_to_surface
       end
-    end
-
-    -- If we are running low on fuel, return to the surface.
-    if dtr:should_refuel() then
-      return return_to_surface
     end
 
     return table.remove(moves, 1)
@@ -477,15 +507,50 @@ local function dig_cuboid()
       m_insert(turn)
       m_insert(turn)
     else
-      m_insert(return_to_surface)
+      log.debug("Return home caused by ITS THE END WOOOOOOOOOOOOOOOOOO")
+      m_insert(home)
     end
 
     height_remaining = height_remaining - 3
   end
-  m_insert(home)
 
+  dtr:refueled() -- Force dtr to update fuel level after initialization.
+  log.infof("Pre-calculated move list with %d moves.", #moves)
+  local move = 0
   while #moves > 0 do
+    move = move + 1
     local func = get_next_move()
+
+    ---@type string?
+    local func_name
+    if func == forward then
+      func_name = "forward"
+    elseif func == return_to_surface then
+      func_name = "return_to_surface (has child calls)"
+    elseif func == home then
+      func_name = "home (has child calls)"
+    elseif func == left then
+      func_name = "turn_left"
+    elseif func == right then
+      func_name = "turn_right"
+    elseif func == up then
+      func_name = "up"
+    elseif func == down then
+      func_name = "down"
+    elseif func == dig_up then
+      func_name = nil
+    elseif func == dig_down then
+      func_name = nil
+    elseif func == dig then
+      func_name = nil
+    else
+      func_name = "unknown"
+    end
+
+    if func_name then
+      log.debugf("%d (%d): %s", dtr.state.recorded_moves, move, func_name)
+    end
+
     local success, reason = func()
     --if not success then
     --  log.error("Move failed: %s. Stopping execution to prevent further issues.", reason)
@@ -527,24 +592,24 @@ local function main_ui()
   local shape_option_defaults = {
     -- shared/cuboid.
     resume = true,
-    forward_length = 16,
+    forwardlength = 16,
     width = 16,
     height = 16,
     quarry = false,
     left_right = "right",
     up_down = "down",
     fuel = true,
-    no_inv = false,
+    noinv = false,
     broadcast = "",
     loglevel = "info",
 
     -- Staircase specific
     stairs = false,
     torches = false,
-    torch_interval = 10,
+    torchinterval = 10,
 
     -- Bridge specific
-    safe_mode = false,
+    safemode = false,
     roof = false,
   }
   local shape_option_overrides = {}
@@ -562,7 +627,7 @@ local function main_ui()
 
     -- Set the arguments table based on the current menu selections.
     parsed.options.shape = selected_shape
-    parsed.options.forward_length = tostring(shape_option_overrides.forward_length or shape_option_defaults.forward_length)
+    parsed.options.forwardlength = tostring(shape_option_overrides.forwardlength or shape_option_defaults.forwardlength)
     parsed.options.width = tostring(shape_option_overrides.width or shape_option_defaults.width)
     parsed.options.height = tostring(shape_option_overrides.height or shape_option_defaults.height)
     parsed.flags.quarry = shape_option_overrides.quarry or shape_option_defaults.quarry
@@ -584,12 +649,12 @@ local function main_ui()
 
     parsed.options.broadcast = tostring(shape_option_overrides.broadcast or shape_option_defaults.broadcast)
     parsed.options.loglevel = tostring(shape_option_overrides.loglevel or shape_option_defaults.loglevel)
-    parsed.options.torch_interval = tostring(shape_option_overrides.torch_interval or shape_option_defaults.torch_interval)
+    parsed.options.torchinterval = tostring(shape_option_overrides.torchinterval or shape_option_defaults.torchinterval)
     parsed.flags.fuel = shape_option_overrides.fuel or shape_option_defaults.fuel
-    parsed.flags.no_inv = shape_option_overrides.no_inv or shape_option_defaults.no_inv
+    parsed.flags.noinv = shape_option_overrides.noinv or shape_option_defaults.noinv
     parsed.flags.stairs = shape_option_overrides.stairs or shape_option_defaults.stairs
     parsed.flags.torches = shape_option_overrides.torches or shape_option_defaults.torches
-    parsed.flags.safe_mode = shape_option_overrides.safe_mode or shape_option_defaults.safe_mode
+    parsed.flags.safemode = shape_option_overrides.safemode or shape_option_defaults.safemode
     parsed.flags.roof = shape_option_overrides.roof or shape_option_defaults.roof
 
     if (type(shape_option_overrides.resume) == "boolean" and shape_option_overrides.resume) or type(shape_option_overrides.resume) == "nil" then
@@ -662,9 +727,9 @@ local function main_ui()
     end,
 
     -- All other options
-    forward_length = function(self, selection)
+    forwardlength = function(self, selection)
       ---@cast selection TampererSelection.Number
-      shape_option_overrides.forward_length = selection.value
+      shape_option_overrides.forwardlength = selection.value
     end,
     width = function(self, selection)
       ---@cast selection TampererSelection.Number
@@ -693,7 +758,7 @@ local function main_ui()
     inv_handling = function (self, selection)
       ---@cast selection TampererSelection.Boolean
       -- We display this to the user inverse.
-      shape_option_overrides.no_inv = not selection.value
+      shape_option_overrides.noinv = not selection.value
     end,
     broadcast_file = function (self, selection)
       ---@cast selection TampererSelection.String
@@ -712,13 +777,13 @@ local function main_ui()
       ---@cast selection TampererSelection.Boolean
       shape_option_overrides.torches = selection.value
     end,
-    torch_interval = function (self, selection)
+    torchinterval = function (self, selection)
       ---@cast selection TampererSelection.Number
-      shape_option_overrides.torch_interval = selection.value
+      shape_option_overrides.torchinterval = selection.value
     end,
-    safe_mode = function (self, selection)
+    safemode = function (self, selection)
       ---@cast selection TampererSelection.Boolean
-      shape_option_overrides.safe_mode = selection.value
+      shape_option_overrides.safemode = selection.value
     end,
     roof = function (self, selection)
       ---@cast selection TampererSelection.Boolean
@@ -751,8 +816,30 @@ end
 
 
 local ok, err = xpcall(function()
+  local function option_check(value, to_type)
+    if to_type == "number" then
+      local n = tonumber(parsed.options[value])
+      if not n then
+        error(("Expected a number for option '%s', got '%s'."):format(value, type(parsed.options[value])))
+      end
+      return n
+    elseif to_type == "string" then
+      if not parsed.options[value] then
+        error(("Expected a string for option '%s', got '%s'."):format(value, type(parsed.options[value])))
+      end
+    else
+      error(("Unsupported type for option check: '%s'."):format(to_type))
+    end
+  end
+
   -- Execute the appropriate digging function.
   if shape_type == "cuboid" then
+    option_check("forwardlength", "number")
+    option_check("width", "number")
+    if not parsed.flags.quarry then
+      option_check("height", "number")
+    end
+
     dig_cuboid()
   elseif shape_type == "staircase" then
     dig_staircase()

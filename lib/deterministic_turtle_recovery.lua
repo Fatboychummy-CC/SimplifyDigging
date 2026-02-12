@@ -164,13 +164,17 @@ local function verify_state(state)
   end
 
   type_check("returns", "table")
-  for i, move in pairs(state.returns) do
+  for move, truth in pairs(state.returns) do
     if type(move) ~= "number" then
-      type_error(("returns[%d]"):format(i), "number")
+      type_error(("returns[%d]"):format(move), "number")
     end
 
     if move < 0 then
-      error(("Invalid save state: returns[%d] cannot be negative"):format(i), 2)
+      error(("Invalid save state: returns[%d] cannot be negative"):format(move), 2)
+    end
+
+    if truth ~= true then
+      type_error(("returns[%d]"):format(move), "true")
     end
   end
 
@@ -249,6 +253,7 @@ function DTR:load_state()
       self.initial_state.last_fuel,
       self.initial_state.moving and "Yes" or "No"
     )
+    self:refueled() -- Force update of fuel level.
   else
     error("DTR state file does not exist.")
   end
@@ -436,6 +441,7 @@ end
 ---@param self DTR
 ---@param movement_direction DTR.State.MovementDirection The direction the turtle is moving in.
 local function pre_move(self, movement_direction)
+  log.debugf("Pre: %d", movement_direction)
   self.state.movement_direction = movement_direction
   self.state.moving = true
 
@@ -443,12 +449,24 @@ local function pre_move(self, movement_direction)
 end
 
 
----@type function
-local post_move
 
+--- Record any post-movement data
 ---@param self DTR
----@param movement_direction DTR.State.MovementDirection
-local function record_movement(self, movement_direction)
+local function post_move(self)
+  log.debugf("Post")
+  self.state.movement_direction = nil
+  self.state.moving = false
+
+  self:save_state()
+end
+
+
+
+--- Writes a movement
+---@param self DTR
+---@param movement_direction DTR.State.MovementDirection The direction the turtle moved in.
+local function write_movement(self, movement_direction)
+  log.debugf("Write: %d", movement_direction)
   if movement_direction == MOVEMENT_DIRECTION.up then
     self.state.position.y = self.state.position.y + 1
   elseif movement_direction == MOVEMENT_DIRECTION.down then
@@ -475,60 +493,98 @@ local function record_movement(self, movement_direction)
   then
     self.state.last_fuel = self.state.last_fuel - 1
   end
-
-  self.state.recorded_moves = self.state.recorded_moves + 1
-
-  if self.simulating and self.state.recorded_moves >= self.initial_state.recorded_moves then
-    self.simulating = false
-
-    -- Now, we need to determine if the turtle actually made the last move that was saved.
-    if not self.initial_state.moving then
-      log.info("Simulation ended, turtle was not moving. Done.")
-      return -- The turtle shut down in between moves, so we're okay.
-    end
-
-    local expected_fuel = self.initial_state.last_fuel
-    local actual_fuel = turtle.getFuelLevel()
-    local expected_movement_direction = self.initial_state.movement_direction
-
-    if expected_fuel == "unlimited" or actual_fuel == "unlimited" then
-      -- If the turtle does not require fuel, we cannot check the fuel level to
-      -- verify the move!
-      error("Simulation ended, but expected or actual fuel was 'unlimited', which is unrecoverable.")
-    end
-
-    if expected_movement_direction == MOVEMENT_DIRECTION.turnLeft or expected_movement_direction == MOVEMENT_DIRECTION.turnRight then
-      -- We just assume that turns succeed.
-      -- Unfortunately, there is nothing we can use to check for turns.
-      post_move(self, expected_movement_direction, true)
-      log.warn("Simulation ended during a turn which was incomplete. Assuming it is complete.")
-      return
-    end
-
-    if expected_fuel > actual_fuel then
-      -- Movement succeeded
-      post_move(self, expected_movement_direction, true)
-      log.infof("Simulation ended, fuel decreased. Last move was successful.")
-    elseif expected_fuel == actual_fuel then
-      -- The move has failed
-      post_move(self, expected_movement_direction, false)
-      log.infof("Simulation ended, fuel level the same. Last move failed.")
-    end
-    error(("Simulation ended, but expected fuel was less than the actual fuel (%d < %d), which is unrecoverable."):format(expected_fuel, actual_fuel))
-  end
 end
 
 
+
+-- Problem. When we increment the recorded moves to say, 14, we assume that means the 14th move has completed.
+
+
+
+--- Records data for a movement, and checks simulation state.
 ---@param self DTR
-post_move = function(self, movement_direction, success)
-  if success then
-    record_movement(self, movement_direction)
+---@param movement_direction DTR.State.MovementDirection
+local function record_movement(self, movement_direction)
+  log.debugf("Record: %d", movement_direction)
+  write_movement(self, movement_direction)
+  self.state.recorded_moves = self.state.recorded_moves + 1
+
+  if self.simulating then
+    local should_end = self.initial_state.moving
+      and self.state.recorded_moves > self.initial_state.recorded_moves
+      or (not self.initial_state.moving and self.state.recorded_moves >= self.initial_state.recorded_moves)
+
+    if should_end then
+      self.simulating = false
+      log.debugf(
+        "End simulation at move %d\n  initial recorded moves: %d\n  was moving: %s",
+        self.state.recorded_moves,
+        self.initial_state.recorded_moves,
+        tostring(self.initial_state.moving)
+      )
+
+      -- Now, we need to determine if the turtle actually made the last move that was saved.
+      if not self.initial_state.moving then
+        log.info("Simulation ended, turtle was not moving. Done.")
+        return -- The turtle shut down in between moves, so we're okay.
+      end
+
+      local expected_fuel = self.initial_state.last_fuel
+      local actual_fuel = turtle.getFuelLevel()
+      local expected_movement_direction = self.initial_state.movement_direction
+
+      if expected_movement_direction ~= movement_direction then
+        error(("Simulation ended, but expected movement direction %d does not match actual movement direction %d, which is unrecoverable."):format(expected_movement_direction, movement_direction))
+      end
+      ---@cast expected_movement_direction DTR.State.MovementDirection
+
+      if expected_fuel == "unlimited" or actual_fuel == "unlimited" then
+        -- If the turtle does not require fuel, we cannot check the fuel level to
+        -- verify the move!
+        error("Simulation ended, but expected or actual fuel was 'unlimited', which is unrecoverable.")
+      end
+
+      if expected_movement_direction == MOVEMENT_DIRECTION.turnLeft or expected_movement_direction == MOVEMENT_DIRECTION.turnRight then
+        -- We just assume that turns succeed.
+        -- Unfortunately, there is nothing we can use to check for turns.
+        log.warn("Simulation ended during a turn which was incomplete. Assuming it is complete.")
+        self.state.recorded_moves = self.initial_state.recorded_moves + 1
+        post_move(self)
+        return
+      end
+
+      if expected_fuel > actual_fuel then
+        -- Movement succeeded
+        log.infof("Simulation ended, fuel decreased. Last move was successful.")
+        self.state.recorded_moves = self.initial_state.recorded_moves + 1
+        post_move(self)
+        return
+      elseif expected_fuel == actual_fuel then
+        -- The move has failed
+        log.infof("Simulation ended, fuel level the same. Last move failed.")
+        post_move(self)
+        -- Problem: Last move failed, but we recorded the move already.
+        -- Invert the movement direction to get back to the correct position in the state.
+        local inverse_direction
+        if expected_movement_direction == MOVEMENT_DIRECTION.forward then
+          inverse_direction = MOVEMENT_DIRECTION.back
+        elseif expected_movement_direction == MOVEMENT_DIRECTION.back then
+          inverse_direction = MOVEMENT_DIRECTION.forward
+        elseif expected_movement_direction == MOVEMENT_DIRECTION.up then
+          inverse_direction = MOVEMENT_DIRECTION.down
+        elseif expected_movement_direction == MOVEMENT_DIRECTION.down then
+          inverse_direction = MOVEMENT_DIRECTION.up
+        else
+          error(("Invalid movement direction: %d"):format(expected_movement_direction))
+        end
+        write_movement(self, inverse_direction)
+        -- Recover the extra fuel used for both movements.
+        self.state.last_fuel = self.state.last_fuel + 2
+        return
+      end
+      error(("Simulation ended, but expected fuel was less than the actual fuel (%d < %d), which is unrecoverable."):format(expected_fuel, actual_fuel))
+    end
   end
-
-  self.state.movement_direction = nil
-  self.state.moving = false
-
-  self:save_state()
 end
 
 
@@ -560,18 +616,21 @@ local function move(self, movement_direction)
 
   local success, reason
   if self.simulating then
+    log.debugf("Simulating move in direction %d", movement_direction)
     success = true
   else
+    log.debugf("Moving in direction %d", movement_direction)
     success, reason = func()
   end
   ---@cast success boolean
 
-  if success then
+  if self.simulating then
     record_movement(self, movement_direction)
-  end
-
-  if not self.simulating then
-    post_move(self, movement_direction, success)
+  else
+    if success then
+      record_movement(self, movement_direction)
+    end
+    post_move(self)
   end
   return success, reason
 end
@@ -785,6 +844,9 @@ end
 
 --- Simple wrapper for turtle.dig, so most turtle functions can be called through DTR.
 function DTR:dig()
+  if self.simulating then
+    return true
+  end
   return turtle.dig()
 end
 
@@ -792,6 +854,9 @@ end
 
 --- Simple wrapper for turtle.digUp, so most turtle functions can be called through DTR.
 function DTR:dig_up()
+  if self.simulating then
+    return true
+  end
   return turtle.digUp()
 end
 
@@ -799,6 +864,9 @@ end
 
 --- Simple wrapper for turtle.digDown, so most turtle functions can be called through DTR.
 function DTR:dig_down()
+  if self.simulating then
+    return true
+  end
   return turtle.digDown()
 end
 
@@ -806,6 +874,9 @@ end
 
 --- Simple wrapper for turtle.place, so most turtle functions can be called through DTR.
 function DTR:place()
+  if self.simulating then
+    return true
+  end
   return turtle.place()
 end
 
@@ -813,6 +884,9 @@ end
 
 --- Simple wrapper for turtle.placeUp, so most turtle functions can be called through DTR.
 function DTR:place_up()
+  if self.simulating then
+    return true
+  end
   return turtle.placeUp()
 end
 
@@ -820,6 +894,9 @@ end
 
 --- Simple wrapper for turtle.placeDown, so most turtle functions can be called through DTR.
 function DTR:place_down()
+  if self.simulating then
+    return true
+  end
   return turtle.placeDown()
 end
 
