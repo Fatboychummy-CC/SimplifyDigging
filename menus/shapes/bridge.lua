@@ -25,7 +25,7 @@ menu:add_boolean(
 )
 
 menu:add_number(
-  "forward_length",
+  "forwardlength",
   "Length",
   "The length to set the bridge. If the turtle runs into a block before this length, it will stop setting the bridge.",
   16,
@@ -33,7 +33,7 @@ menu:add_number(
 )
 
 menu:add_boolean(
-  "safe_mode",
+  "safemode",
   "Safe Mode",
   "Enables safe mode by placing blocks on the sides of the bridge as well to prevent falling off. Requires more blocks in the inventory, and more time.",
   false
@@ -54,11 +54,27 @@ menu:add_boolean(
 )
 
 menu:add_number(
-  "torch_interval",
+  "torchinterval",
   "Torch Intrvl",
   "The interval (in blocks) at which to place torches if enabled.",
   10,
   1
+)
+
+local run_dir = fs.getDir(shell.getRunningProgram())
+menu:add_file(
+  "broadcast_file",
+  "Broadcaster",
+  "A file to handle broadcasting status updates during digging.",
+  fs.combine(run_dir, "lib", "broadcast", "empty.lua")
+)
+
+menu:add_list(
+  "log_level",
+  "Log Level",
+  "Sets the logging level for this operation.",
+  {"debug", "info", "warning", "error"},
+  2
 )
 
 return menu

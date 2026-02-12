@@ -25,7 +25,7 @@ menu:add_boolean(
 )
 
 menu:add_number(
-  "forward_length",
+  "forwardlength",
   "Steps",
   "The number of steps to dig (the length forward).",
   16,
@@ -63,7 +63,7 @@ menu:add_boolean(
 )
 
 menu:add_number(
-  "torch_interval",
+  "torchinterval",
   "Torch Intrvl",
   "The interval (in steps) at which to place torches if enabled.",
   10,

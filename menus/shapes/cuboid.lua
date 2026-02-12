@@ -25,7 +25,7 @@ menu:add_boolean(
 )
 
 menu:add_number(
-  "forward_length",
+  "forwardlength",
   "Forward Length",
   "The length to dig forward.",
   16,
