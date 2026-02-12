@@ -34,6 +34,8 @@ local root = require "filesystem"
 local pp = root:programPath()
 local DTR = require "deterministic_turtle_recovery"
 
+local MAX_HEIGHT = 320 -- Minecraft maximum world height.
+
 
 -- Argument parsing.
 local argparse = require "simple_argparse"
@@ -312,36 +314,71 @@ local function dig_cuboid()
     dtr:start_simulating()
   end
 
+  local bedrock_reached = false
+
   local function forward()
-    repeat dtr:dig() until dtr:forward()
+    local ok, err = dtr:forward()
+    if err == "bedrock" then
+      bedrock_reached = true
+      return
+    end
+
+    while not ok do
+      dtr:dig()
+      ok, err = dtr:forward()
+    end
+
+    return ok
   end
 
   local function up()
-    repeat dtr:dig_up() until dtr:up()
+    local ok, err = dtr:up()
+    if err == "bedrock" then
+      bedrock_reached = true
+      return
+    end
+
+    while not ok do
+      dtr:dig_up()
+      ok, err = dtr:up()
+    end
+
+    return ok
   end
 
   local function down()
-    repeat dtr:dig_down() until dtr:down()
+    local ok, err = dtr:down()
+    if err == "bedrock" then
+      bedrock_reached = true
+      return
+    end
+
+    while not ok do
+      dtr:dig_down()
+      ok, err = dtr:down()
+    end
+
+    return ok
   end
 
   local function left()
-    dtr:turn_left()
+    return dtr:turn_left()
   end
 
   local function right()
-    dtr:turn_right()
+    return dtr:turn_right()
   end
 
   local function dig()
-    dtr:dig()
+    return dtr:dig()
   end
 
   local function dig_up()
-    dtr:dig_up()
+    return dtr:dig_up()
   end
 
   local function dig_down()
-    dtr:dig_down()
+    return dtr:dig_down()
   end
 
   -- Initialization:
@@ -355,7 +392,7 @@ local function dig_cuboid()
   -- Pull the values from arguments
   local forward_length = tonumber(parsed.options.forwardlength)
   local width = tonumber(parsed.options.width)
-  local height = parsed.flags.quarry and math.huge or tonumber(parsed.options.height) or math.huge
+  local height = parsed.flags.quarry and MAX_HEIGHT or tonumber(parsed.options.height) or math.huge
   local no_inv = parsed.flags.noinv
   local fuel = parsed.flags.fuel
   if parsed.options.loglevel ~= "info" then
@@ -432,6 +469,12 @@ local function dig_cuboid()
 
 
     if not dtr.simulating then
+      -- If we've hit bedrock.
+      if bedrock_reached then
+        log.debug("Return to surface caused by hitting bedrock.")
+        return home
+      end
+
       -- If the inventory is full, either dump it or return and dump it.
       if count_slots() == 16 then
         if no_inv then
@@ -521,6 +564,7 @@ local function dig_cuboid()
     move = move + 1
     local func = get_next_move()
 
+    --#region debug logging
     ---@type string?
     local func_name
     if func == forward then
@@ -550,12 +594,19 @@ local function dig_cuboid()
     if func_name then
       log.debugf("%d (%d): %s", dtr.state.recorded_moves, move, func_name)
     end
+    --#endregion debug logging
 
     local success, reason = func()
-    --if not success then
-    --  log.error("Move failed: %s. Stopping execution to prevent further issues.", reason)
-    --  break
-    --end
+
+    if not success and reason == "bedrock" then
+      log.warn("Hit bedrock during move. Marking bedrock reached and returning to surface.")
+      bedrock_reached = true
+    end
+
+    if dtr.simulating and dtr.state.recorded_moves % 100 == 0 then
+      os.queueEvent("quick_yield")
+      os.pullEvent("quick_yield")
+    end
   end
   cleanup_reboot()
 end
@@ -854,4 +905,5 @@ end, debug.traceback)
 
 if not ok then
   log.fatal(err)
+  minilogger.close()
 end

@@ -79,6 +79,7 @@ local log = require "minilogger".new("DTR")
 ---@field state DTR.State The current state of the DTR system.
 ---@field save_file FS_File The file where the DTR state is saved.
 ---@field simulating boolean Whether the DTR system is currently simulating movements (i.e. during recovery) or actually moving the turtle.
+---@field sim_start_time integer? The time at which simulation started, in milliseconds since the epoch. Used for logging purposes.
 ---@field initial_state DTR.State? Stores the initial state, since the current state will be modified.
 local DTR = {}
 
@@ -113,7 +114,8 @@ function DTR.new(save_file)
     },
     save_file = root:file(save_file),
     simulating = false,
-    initial_state = nil
+    sim_start_time = nil,
+    initial_state = nil,
   }
 
   log.infof("Initialized DTR with save file '%s'", save_file)
@@ -441,7 +443,6 @@ end
 ---@param self DTR
 ---@param movement_direction DTR.State.MovementDirection The direction the turtle is moving in.
 local function pre_move(self, movement_direction)
-  log.debugf("Pre: %d", movement_direction)
   self.state.movement_direction = movement_direction
   self.state.moving = true
 
@@ -453,7 +454,6 @@ end
 --- Record any post-movement data
 ---@param self DTR
 local function post_move(self)
-  log.debugf("Post")
   self.state.movement_direction = nil
   self.state.moving = false
 
@@ -466,7 +466,6 @@ end
 ---@param self DTR
 ---@param movement_direction DTR.State.MovementDirection The direction the turtle moved in.
 local function write_movement(self, movement_direction)
-  log.debugf("Write: %d", movement_direction)
   if movement_direction == MOVEMENT_DIRECTION.up then
     self.state.position.y = self.state.position.y + 1
   elseif movement_direction == MOVEMENT_DIRECTION.down then
@@ -497,7 +496,10 @@ end
 
 
 
--- Problem. When we increment the recorded moves to say, 14, we assume that means the 14th move has completed.
+---@param self DTR
+local function done_sim(self)
+  log.debugf("Sim timing: %d ms", os.epoch("utc") - self.sim_start_time)
+end
 
 
 
@@ -505,7 +507,6 @@ end
 ---@param self DTR
 ---@param movement_direction DTR.State.MovementDirection
 local function record_movement(self, movement_direction)
-  log.debugf("Record: %d", movement_direction)
   write_movement(self, movement_direction)
   self.state.recorded_moves = self.state.recorded_moves + 1
 
@@ -516,6 +517,7 @@ local function record_movement(self, movement_direction)
 
     if should_end then
       self.simulating = false
+      done_sim(self)
       log.debugf(
         "End simulation at move %d\n  initial recorded moves: %d\n  was moving: %s",
         self.state.recorded_moves,
@@ -616,11 +618,20 @@ local function move(self, movement_direction)
 
   local success, reason
   if self.simulating then
-    log.debugf("Simulating move in direction %d", movement_direction)
     success = true
   else
-    log.debugf("Moving in direction %d", movement_direction)
     success, reason = func()
+    if reason == "Movement obstructed" then
+      local inspect_func = movement_direction == MOVEMENT_DIRECTION.forward and turtle.inspect
+        or movement_direction == MOVEMENT_DIRECTION.up and turtle.inspectUp
+        or movement_direction == MOVEMENT_DIRECTION.down and turtle.inspectDown
+      if inspect_func then
+        local success, data = inspect_func()
+        if success and data and data.name == "minecraft:bedrock" then
+          reason = "bedrock"
+        end
+      end
+    end
   end
   ---@cast success boolean
 
@@ -640,6 +651,7 @@ end
 --- Toggle simulating movements. Will simulate until the initial_state.recorded_moves is reached.
 function DTR:start_simulating()
   self.simulating = true
+  self.sim_start_time = os.epoch "utc"
   log.info("Started simulating movements for recovery.")
 end
 
@@ -785,55 +797,77 @@ function DTR:go_to(x, y, z, allow_digging)
     return self:down()
   end
 
-  if self.state.position.x ~= x then
-    if self.state.position.x > x then
-      local success, reason = self:face(3) -- West (-x)
-      if not success then
-        return false, reason, deep_copy(self.state.position)
-      end
-    else
-      local success, reason = self:face(1) -- East (+x)
-      if not success then
-        return false, reason, deep_copy(self.state.position)
-      end
-    end
+  local order = {"z", "x", "y"}
 
-    local success, reason, pos = move_axis("x", x, forward, turtle.dig)
-    if not success then
-      return false, reason, pos
+  local funcs = {
+    x = function()
+      if self.state.position.x ~= x then
+        if self.state.position.x > x then
+          local success, reason = self:face(3) -- West (-x)
+          if not success then
+            return false, reason, deep_copy(self.state.position)
+          end
+        else
+          local success, reason = self:face(1) -- East (+x)
+          if not success then
+            return false, reason, deep_copy(self.state.position)
+          end
+        end
+
+        local success, reason, pos = move_axis("x", x, forward, turtle.dig)
+        if not success then
+          return false, reason, pos
+        end
+      end
+      return true
+    end,
+    y = function()
+      if self.state.position.y ~= y then
+        if self.state.position.y < y then
+          local success, reason, pos = move_axis("y", y, up, turtle.digUp)
+          if not success then
+            return false, reason, pos
+          end
+        else
+          local success, reason, pos = move_axis("y", y, down, turtle.digDown)
+          if not success then
+            return false, reason, pos
+          end
+        end
+      end
+      return true
+    end,
+    z = function()
+      if self.state.position.z ~= z then
+        if self.state.position.z > z then
+          local success, reason = self:face(0) -- North (-z)
+          if not success then
+            return false, reason, deep_copy(self.state.position)
+          end
+        else
+          local success, reason = self:face(2) -- South (+z)
+          if not success then
+            return false, reason, deep_copy(self.state.position)
+          end
+        end
+
+        local success, reason, pos = move_axis("z", z, forward, turtle.dig)
+        if not success then
+          return false, reason, pos
+        end
+      end
+      return true
     end
+  }
+
+  if x == 0 and y == 0 and z == 0 then
+    order = {"y", "x", "z"}
   end
 
-  if self.state.position.z ~= z then
-    if self.state.position.z > z then
-      local success, reason = self:face(0) -- North (-z)
-      if not success then
-        return false, reason, deep_copy(self.state.position)
-      end
-    else
-      local success, reason = self:face(2) -- South (+z)
-      if not success then
-        return false, reason, deep_copy(self.state.position)
-      end
-    end
-
-    local success, reason, pos = move_axis("z", z, forward, turtle.dig)
+  for _, axis in ipairs(order) do
+    local success, reason, pos = funcs[axis]()
     if not success then
       return false, reason, pos
-    end
-  end
-
-  if self.state.position.y ~= y then
-    if self.state.position.y < y then
-      local success, reason, pos = move_axis("y", y, up, turtle.digUp)
-      if not success then
-        return false, reason, pos
-      end
-    else
-      local success, reason, pos = move_axis("y", y, down, turtle.digDown)
-      if not success then
-        return false, reason, pos
-      end
     end
   end
 
