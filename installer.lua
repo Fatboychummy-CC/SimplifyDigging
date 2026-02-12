@@ -1,14 +1,20 @@
 --- Simple program to be used as an installer script. Copy to repos and insert what is needed.
 
 local to_get = {
-  "extern:lib/broadcast_handler.lua:https://raw.githubusercontent.com/Fatboychummy-CC/SimplifyDigging/refs/heads/main/lib/broadcast_handler.lua",
-  "extern:dig.lua:https://raw.githubusercontent.com/Fatboychummy-CC/SimplifyDigging/refs/heads/main/dig.lua",
+  "extern:lib/broadcast/basic.lua:https://raw.githubusercontent.com/Fatboychummy-CC/SimplifyDigging/refs/heads/better/lib/broadcast/basic.lua",
+  "extern:lib/broadcast/empty.lua:https://raw.githubusercontent.com/Fatboychummy-CC/SimplifyDigging/refs/heads/better/lib/broadcast/empty.lua",
+  "extern:dig.lua:https://raw.githubusercontent.com/Fatboychummy-CC/SimplifyDigging/refs/heads/better/dig.lua",
   "L:lib/filesystem.lua:filesystem.lua",
   "L:lib/simple_argparse.lua:simple_argparse.lua",
   "L:lib/minilogger.lua:minilogger.lua",
 
-  -- CCryptoLib automatically installs to `ccryptolib` folder, so it just needs to be in `lib`.
-  --"I:https://raw.githubusercontent.com/Fatboychummy-CC/etc-programs/refs/heads/main/installers/ccryptolib.lua:lib"
+  -- UI
+  "extern:menus/init.lua:https://raw.githubusercontent.com/Fatboychummy-CC/SimplifyDigging/refs/heads/better/menus/init.lua",
+  "extern:menus/main.lua:https://raw.githubusercontent.com/Fatboychummy-CC/SimplifyDigging/refs/heads/better/menus/main.lua",
+  "extern:menus/shapes/cuboid.lua:https://raw.githubusercontent.com/Fatboychummy-CC/SimplifyDigging/refs/heads/better/menus/shapes/cuboid.lua",
+  "extern:menus/shapes/staircase.lua:https://raw.githubusercontent.com/Fatboychummy-CC/SimplifyDigging/refs/heads/better/menus/shapes/staircase.lua",
+  "extern:menus/shapes/bridge.lua:https://raw.githubusercontent.com/Fatboychummy-CC/SimplifyDigging/refs/heads/better/menus/shapes/bridge.lua",
+  "I:https://raw.githubusercontent.com/Fatboychummy-CC/Tamperer/refs/heads/better/installer.lua:lib:no_ccryptolib"
 }
 local program_name = "Simplify Digging 2.0"
 local pinestore_id = nil -- Set this to the ID of the pinestore project if you wish to note to pinestore that a download has occurred.
@@ -40,6 +46,9 @@ local diffs = {
   no_broadcast = {
     "all",
     "-1"
+  },
+  headless = {
+    "1-6"
   }
 }
 --[[
@@ -58,7 +67,7 @@ local PINESTORE_ROOT = "https://pinestore.cc/"
 local PINESTORE_PROJECT_ENDPOINT = PINESTORE_ROOT .. "api/project/"
 local PINESTORE_DOWNLOAD_ENDPOINT = PINESTORE_ROOT .. "api/log/download"
 local p_dir
-local dir_argument = ...
+local dir_argument, force, diff_force = ...
 if dir_argument then
   p_dir = shell.resolve(dir_argument)
 else
@@ -123,9 +132,15 @@ local function get_version_to_download()
       table.insert(versions, k)
     end
     write("> ")
-    local version = read(nil, nil, function(partial)
-      return completion_choice(partial, versions) --[[@as string[] ]]
-    end)
+    local version
+    if diff_force then
+      version = diff_force
+      print(version)
+    else
+      version = read(nil, nil, function(partial)
+        return completion_choice(partial, versions) --[[@as string[] ]]
+      end)
+    end
     if diffs[version] then
       return version
     else
@@ -233,7 +248,7 @@ local function get(...)
     local paste_file, paste = remote:match("^paste:(.-):(.+)$")
     local local_file, remote_file = remote:match("^L:(.-):(.+)$")
     local command = remote:match("^C:(.+)$")
-    local remote_installer = remote:match("^I:(.+)$")
+    local remote_installer, path, diff = remote:match("^I:(.+):(.-):(.-)$")
     local use_libraries = true
 
     if not local_file then
@@ -266,9 +281,12 @@ local function get(...)
         error(("Failed to download installer from '%s'."):format(remote_installer), 0)
       end
 
+      -- Only provide the diff value if it's not an empty string.
+      if diff == "" then diff = nil end
+
       local func, err = load(installer, "remote-installer", "t", _ENV)
       if func then
-        local ok, err2 = pcall(func, p_dir)
+        local ok, err2 = pcall(func, path, "y", diff)
         if not ok then
           error(("Remote installer from '%s' failed: %s"):format(remote_installer, err2), 0)
         end
@@ -314,10 +332,14 @@ end
 write(("Going to install to:\n  /%s\n\nIs this where you want it to be installed? (y/n): "):format(fs.combine(p_dir, "/*")))
 
 local key
-repeat
-  local _, _key = os.pullEvent("key")
-  key = _key
-until key == keys.y or key == keys.n
+if force ~= "y" then
+  repeat
+    local _, _key = os.pullEvent("key")
+    key = _key
+  until key == keys.y or key == keys.n
+else
+  key = keys.y
+end
 
 if key == keys.y then
   print("y")
