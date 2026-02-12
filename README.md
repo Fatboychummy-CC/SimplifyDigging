@@ -6,7 +6,8 @@
 SimplifyDigging is a ComputerCraft program designed to make digging various shapes with a turtle easy and efficient.
 
 ## Features
-- Dig cuboids, tunnels, staircases, spheres, and quarries.
+- Dig cuboids, staircases, and quarries.
+- Place bridges across gaps.
 - User-friendly interface.
 - Customizable dimensions for each shape.
 - Efficient digging algorithms. In particular, it uses all three diggable directions (forward, up, down).
@@ -59,9 +60,10 @@ This command would start digging a cuboid of dimensions 10x5x3, oriented to the 
   - The staircase will go downwards by default, and is only one block wide.
   - Alias: `stair`
   - Alias: `stairs`
-- `dig.lua sphere <radius> [flags] [options=values]`
-  - Digs a sphere with the specified radius.
-  - The turtle will dig to the right and downwards by default.
+- `dig.lua bridge <length> [flags] [options=values]`
+  - Sets a bridge with the specified length.
+  - The turtle will only go straight, stopping when it hits any block in the way
+    or the specified length, whatever comes first.
 
 #### Flag Reference
 - `--left`/`-l`
