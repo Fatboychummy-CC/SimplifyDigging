@@ -1,7 +1,7 @@
 # SimplifyDigging 2.0
 
 > [!WARNING]
-> This program is stil in development, and may outright not work or have major bugs. Use at your own risk.
+> This program is still in development, and may outright not work or have major bugs. Use at your own risk.
 
 SimplifyDigging is a ComputerCraft program designed to make digging various shapes with a turtle easy and efficient.
 
