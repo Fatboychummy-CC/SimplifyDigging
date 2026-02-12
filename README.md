@@ -17,7 +17,12 @@ SimplifyDigging is a ComputerCraft program designed to make digging various shap
 - Returns home when it runs low on fuel or inventory space.
 
 ## Installation
-1. Run `wget run https://raw.githubusercontent.com/Fatboychummy-CC/SimplifyDigging/refs/heads/main/installer.lua` in a turtle to download and run the installer.
+1. Run the following command in a turtle:
+
+```
+wget run https://raw.githubusercontent.com/Fatboychummy-CC/SimplifyDigging/refs/heads/better/installer.lua
+```
+
 2. Follow the on-screen instructions to complete the installation.
 3. After installation, you can start the program by running `dig.lua` in the turtle.
 
