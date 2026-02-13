@@ -455,8 +455,8 @@ local function verify_broadcaster(broadcaster)
     error(("Broadcaster is missing required field '%s'. Got '%s'."):format(field, got))
   end
   local function broadcaster_field_check(field, _type)
-    if type(field) ~= _type then
-      broadcaster_field_error(field, type(field))
+    if type(broadcaster[field]) ~= _type then
+      broadcaster_field_error(field, type(broadcaster[field]))
     end
   end
 
@@ -728,9 +728,6 @@ local function dig_cuboid_impl(broadcaster)
       broadcaster.keepalive()
     end
   end
-
-  broadcaster.complete()
-  cleanup_reboot()
 end
 
 
@@ -763,7 +760,6 @@ local function dig_cuboid()
     pcall(log.errorf, "Cuboid dig failed: %s", err or "unknown error")
     pcall(broadcaster.error, err or "unknown error")
     pcall(broadcaster.state, "error")
-    pcall(cleanup_reboot)
     -- Elevate the error
     error(err, 0)
   end
