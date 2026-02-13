@@ -294,33 +294,21 @@ end
 
 
 
---- Cuboid digging function
-local function dig_cuboid()
-  log.infof("Starting cuboid dig with parameters:\n  forwardlength=%d\n  width=%d\n  height=%s\n  quarry=%s\n  left_right=%s\n  up_down=%s\n  fuel=%s\n  noinv=%s\n  broadcast_file=%s\n  log_level=%s",
-    parsed.options.forwardlength or -1,
-    parsed.options.width or -1,
-    parsed.options.height or "infinite",
-    parsed.flags.quarry and "true" or "false",
-    parsed.flags.left and "left" or "right",
-    parsed.flags.up and "up" or "down",
-    parsed.flags.fuel and "true" or "false",
-    parsed.flags.noinv and "true" or "false",
-    parsed.options.broadcast or "None",
-    parsed.options.loglevel or "info"
-  )
-  local dtr = setup_reboot()
+--- Wraps a dtr instance's turtle functions such that they can be passed to the shape digging functions without modification.
+---@param dtr DTR The DTR instance to wrap.
+---@return WrappedDTR wrapped The wrapped DTR instance.
+local function wrap_dtr(dtr)
+  ---@class WrappedDTR
+  local wrapped = {
+    hit_bedrock = false
+  }
 
-  if dtr:should_simulate() then
-    dtr:start_simulating()
-  end
-
-  local bedrock_reached = false
-
-  local function forward()
+  ---@return boolean success
+  ---@return string? reason
+  function wrapped.forward()
     local ok, err = dtr:forward()
     if err == "bedrock" then
-      bedrock_reached = true
-      return
+      wrapped.hit_bedrock = true
     end
 
     while not ok do
@@ -328,14 +316,17 @@ local function dig_cuboid()
       ok, err = dtr:forward()
     end
 
-    return ok
+    return ok, err
   end
 
-  local function up()
+
+
+  ---@return boolean success
+  ---@return string? reason
+  function wrapped.up()
     local ok, err = dtr:up()
     if err == "bedrock" then
-      bedrock_reached = true
-      return
+      wrapped.hit_bedrock = true
     end
 
     while not ok do
@@ -343,14 +334,17 @@ local function dig_cuboid()
       ok, err = dtr:up()
     end
 
-    return ok
+    return ok, err
   end
 
-  local function down()
+
+
+  ---@return boolean success
+  ---@return string? reason
+  function wrapped.down()
     local ok, err = dtr:down()
     if err == "bedrock" then
-      bedrock_reached = true
-      return
+      wrapped.hit_bedrock = true
     end
 
     while not ok do
@@ -358,36 +352,152 @@ local function dig_cuboid()
       ok, err = dtr:down()
     end
 
-    return ok
+    return ok, err
   end
 
-  local function left()
+
+
+  ---@return boolean success
+  ---@return string? reason
+  function wrapped.turn_left()
     return dtr:turn_left()
   end
 
-  local function right()
+
+
+  ---@return boolean success
+  ---@return string? reason
+  function wrapped.turn_right()
     return dtr:turn_right()
   end
 
-  local function dig()
+
+
+  ---@return boolean success
+  ---@return string? reason
+  function wrapped.dig()
     return dtr:dig()
   end
 
-  local function dig_up()
+
+
+  ---@return boolean success
+  ---@return string? reason
+  function wrapped.dig_up()
     return dtr:dig_up()
   end
 
-  local function dig_down()
+
+
+  ---@return boolean success
+  ---@return string? reason
+  function wrapped.dig_down()
     return dtr:dig_down()
   end
+
+  return wrapped
+end
+
+
+
+--- Count the number of slots in the turtle's inventory that are occupied.
+---@return integer n The number of occupied slots.
+local function count_slots()
+  local n = 0
+
+  for i = 1, 16 do
+    if turtle.getItemCount(i) > 0 then
+      n = n + 1
+    end
+  end
+
+  return n
+end
+
+
+
+--- Drop the turtle's inventory.
+---@param dtr DTR The DTR instance to notify when refueling.
+---@param fuel boolean If true, will attempt to refuel with the items before dropping them.
+---@param no_inv boolean Does the same as `fuel` in this function.
+local function drop(dtr, fuel, no_inv)
+  for i = 1, 16 do
+    if turtle.getItemCount(i) > 0 then
+      turtle.select(i)
+      if fuel or no_inv then
+        -- Attempt to refuel before dropping it.
+        -- We also refuel if no_inv is enabled, since we'd just be throwing
+        -- away the item anyways.
+        if turtle.refuel(64) then
+          dtr:refueled()
+        end
+      end
+      turtle.drop()
+    end
+  end
+end
+
+
+
+--- Convert a file path to a require path (remove .lua and replace / with .).
+---@param path string The file path to convert.
+---@return string require_path The converted require path.
+local function to_require_path(path)
+  return (path:gsub("%.lua$", ""):gsub("/", "."))
+end
+
+
+
+--- Verify that a broadcaster has the necessary functions.
+---@param broadcaster SimplifyDig.Broadcaster The broadcaster to verify.
+local function verify_broadcaster(broadcaster)
+  local function broadcaster_field_error(field, got)
+    error(("Broadcaster is missing required field '%s'. Got '%s'."):format(field, got))
+  end
+  local function broadcaster_field_check(field, _type)
+    if type(field) ~= _type then
+      broadcaster_field_error(field, type(field))
+    end
+  end
+
+  if type(broadcaster) ~= "table" then
+    error("Broadcaster must be a table.")
+  end
+  broadcaster_field_check("ready", "boolean")
+  broadcaster_field_check("setup", "function")
+  broadcaster_field_check("raw", "function")
+  broadcaster_field_check("keepalive", "function")
+  broadcaster_field_check("status", "function")
+  broadcaster_field_check("complete", "function")
+  broadcaster_field_check("panic", "function")
+  broadcaster_field_check("error", "function")
+  local ok, err = broadcaster.setup()
+
+  if not ok then
+    error(("Broadcaster setup failed: %s"):format(err or "unknown error"))
+  end
+end
+
+
+
+--- Cuboid digging impl
+---@param broadcaster SimplifyDig.Broadcaster The broadcaster to use for status updates.
+local function dig_cuboid_impl(broadcaster)
+  local dtr = setup_reboot()
+  local wrapped_dtr = wrap_dtr(dtr)
+
+  if dtr:should_simulate() then
+    dtr:start_simulating()
+  end
+
 
   -- Initialization:
   -- 1. Determine which way we want to turn based off arguments.
   -- 2. Determine if we're going up or down based off arguments.
-  local turn = parsed.flags.left and left or right
-  local vertical_move = parsed.flags.up and up or down
-  local duo_vertical_dig = parsed.flags.up and dig_up or dig_down
-  local n_duo_vertical_dig = parsed.flags.up and dig_down or dig_up
+  local turn = parsed.flags.left and wrapped_dtr.turn_left or wrapped_dtr.turn_right
+  local vertical_move = parsed.flags.up and wrapped_dtr.up or wrapped_dtr.down
+  local duo_vertical_dig = parsed.flags.up and wrapped_dtr.dig_up or wrapped_dtr.dig_down
+  local n_duo_vertical_dig = parsed.flags.up and wrapped_dtr.dig_down or wrapped_dtr.dig_up
 
   -- Pull the values from arguments
   local forward_length = tonumber(parsed.options.forwardlength)
@@ -399,58 +509,53 @@ local function dig_cuboid()
     minilogger.set_log_level(minilogger.LOG_LEVELS[parsed.options.loglevel:upper()])
   end
 
-  local function count_slots()
-    local n = 0
-
-    for i = 1, 16 do
-      if turtle.getItemCount(i) > 0 then
-        n = n + 1
-      end
-    end
-
-    return n
-  end
-
-  local function drop()
-    for i = 1, 16 do
-      if turtle.getItemCount(i) > 0 then
-        turtle.select(i)
-        if fuel or no_inv then
-          -- Attempt to refuel before dropping it.
-          -- We also refuel if no_inv is enabled, since we'd just be throwing
-          -- away the item anyways.
-          if turtle.refuel(64) then
-            dtr:refueled()
-          end
-        end
-        turtle.drop()
-      end
-    end
-  end
-
   --- The function ran at the surface.
-  local function surface_func()
+  ---@param returning boolean If we're returning back to the mine when done.
+  local function surface_func(returning)
+    broadcaster.status(dtr.state.position, dtr.state.facing, dtr.state.last_fuel)
     while not peripheral.hasType("front", "inventory") do
       log.warn("No inventory in front...")
+      broadcaster.state "stuck"
+      broadcaster.panic(
+        "No inventory in front to dump items into.",
+        dtr.state.position,
+        dtr.state.facing,
+        dtr.state.last_fuel
+      )
       sleep(10)
     end
+    broadcaster.state "idle"
 
     while true do
-      drop()
+      drop(dtr, fuel, no_inv)
       if count_slots() == 0 then
         break
       else
         log.warn("Inventory still not empty after dumping...")
+        broadcaster.state "stuck"
+        broadcaster.panic(
+          "Inventory still not empty after dumping.",
+          dtr.state.position,
+          dtr.state.facing,
+          dtr.state.last_fuel
+        )
         sleep(10)
       end
+    end
+    broadcaster.state "idle"
+
+    if returning then
+      broadcaster.state "return-mine"
     end
   end
 
   local function return_to_surface()
+    broadcaster.state "return-home"
     dtr:return_to_surface(true, 2, surface_func)
   end
 
   local function home()
+    broadcaster.state "return-home"
     dtr:return_to_surface(true, 2, surface_func, true)
   end
 
@@ -470,7 +575,7 @@ local function dig_cuboid()
 
     if not dtr.simulating then
       -- If we've hit bedrock.
-      if bedrock_reached then
+      if wrapped_dtr.hit_bedrock then
         log.debug("Return to surface caused by hitting bedrock.")
         return home
       end
@@ -478,7 +583,7 @@ local function dig_cuboid()
       -- If the inventory is full, either dump it or return and dump it.
       if count_slots() == 16 then
         if no_inv then
-          drop()
+          drop(dtr, fuel, no_inv)
         else
           log.debug("Return to surface caused by full inventory.")
           return return_to_surface
@@ -497,13 +602,13 @@ local function dig_cuboid()
 
   local function reverse()
     m_insert(turn)
-    m_insert(forward)
+    m_insert(wrapped_dtr.forward)
     m_insert(turn)
-    turn = turn == left and right or left
+    turn = turn == wrapped_dtr.turn_left and wrapped_dtr.turn_right or wrapped_dtr.turn_left
   end
 
   -- Move forward one block to be in the right position.
-  m_insert(forward)
+  m_insert(wrapped_dtr.forward)
 
   local height_remaining = height
 
@@ -524,7 +629,7 @@ local function dig_cuboid()
         if height_remaining >= 3 then
           m_insert(n_duo_vertical_dig)
         end
-        m_insert(forward)
+        m_insert(wrapped_dtr.forward)
       end
       if w < width then
         if height_remaining >= 2 then
@@ -562,30 +667,44 @@ local function dig_cuboid()
   local move = 0
   while #moves > 0 do
     move = move + 1
+    if not dtr.simulating then
+      if move % 10 == 0 then
+        broadcaster.status(dtr.state.position, dtr.state.facing, dtr.state.last_fuel)
+        broadcaster.completion(1 - #moves / n_moves)
+      elseif move % 3 == 0 then
+        broadcaster.state "digging"
+        broadcaster.keepalive()
+      end
+
+      if move == 420 then
+        broadcaster.state "teapot"
+      end
+    end
+
     local func = get_next_move()
 
     --#region debug logging
     ---@type string?
     local func_name
-    if func == forward then
+    if func == wrapped_dtr.forward then
       func_name = "forward"
     elseif func == return_to_surface then
       func_name = "return_to_surface (has child calls)"
     elseif func == home then
       func_name = "home (has child calls)"
-    elseif func == left then
+    elseif func == wrapped_dtr.turn_left then
       func_name = "turn_left"
-    elseif func == right then
+    elseif func == wrapped_dtr.turn_right then
       func_name = "turn_right"
-    elseif func == up then
+    elseif func == wrapped_dtr.up then
       func_name = "up"
-    elseif func == down then
+    elseif func == wrapped_dtr.down then
       func_name = "down"
-    elseif func == dig_up then
+    elseif func == wrapped_dtr.dig_up then
       func_name = nil
-    elseif func == dig_down then
+    elseif func == wrapped_dtr.dig_down then
       func_name = nil
-    elseif func == dig then
+    elseif func == wrapped_dtr.dig then
       func_name = nil
     else
       func_name = "unknown"
@@ -600,14 +719,57 @@ local function dig_cuboid()
 
     if not success and reason == "bedrock" then
       log.warn("Hit bedrock during move. Marking bedrock reached and returning to surface.")
-      bedrock_reached = true
+      wrapped_dtr.hit_bedrock = true
     end
 
     if dtr.simulating and dtr.state.recorded_moves % 100 == 0 then
       os.queueEvent("quick_yield")
       os.pullEvent("quick_yield")
+      broadcaster.keepalive()
     end
   end
+
+  broadcaster.complete()
+  cleanup_reboot()
+end
+
+
+
+--- Cuboid digging function
+local function dig_cuboid()
+  log.infof("Starting cuboid dig with parameters:\n  forwardlength=%d\n  width=%d\n  height=%s\n  quarry=%s\n  left_right=%s\n  up_down=%s\n  fuel=%s\n  noinv=%s\n  broadcast_file=%s\n  log_level=%s",
+    parsed.options.forwardlength or -1,
+    parsed.options.width or -1,
+    parsed.options.height or "infinite",
+    parsed.flags.quarry and "true" or "false",
+    parsed.flags.left and "left" or "right",
+    parsed.flags.up and "up" or "down",
+    parsed.flags.fuel and "true" or "false",
+    parsed.flags.noinv and "true" or "false",
+    parsed.options.broadcast or "None",
+    parsed.options.loglevel or "info"
+  )
+  if not parsed.options.broadcast then
+    parsed.options.broadcast = tostring(pp:at("lib/broadcast"):file("empty.lua"))
+  end
+
+  local broadcaster = require(to_require_path(parsed.options.broadcast)) --[[@as SimplifyDig.Broadcaster]]
+  verify_broadcaster(broadcaster)
+  broadcaster.state "init"
+
+  local ok, err = xpcall(dig_cuboid_impl, debug.traceback, broadcaster)
+
+  if not ok then
+    pcall(log.errorf, "Cuboid dig failed: %s", err or "unknown error")
+    pcall(broadcaster.error, err or "unknown error")
+    pcall(broadcaster.state, "error")
+    pcall(cleanup_reboot)
+    -- Elevate the error
+    error(err, 0)
+  end
+
+  log.info("Cuboid dig completed successfully.")
+  broadcaster.complete()
   cleanup_reboot()
 end
 

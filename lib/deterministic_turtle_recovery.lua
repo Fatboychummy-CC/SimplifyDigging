@@ -316,7 +316,7 @@ end
 ---@param self DTR
 ---@param allow_digging boolean Whether the turtle is allowed to dig blocks in the way when returning to the surface.
 ---@param surface_facing DTR.State.Facing The direction the turtle will face when it reaches the surface.
----@param surface_func fun() A callback to run once the turtle has reached the surface. Once this is complete, the turtle will return to the last position and resume the dig.
+---@param surface_func fun(returning: boolean) A callback to run once the turtle has reached the surface. Once this is complete, the turtle will return to the last position and resume the dig.
 ---@param dont_return boolean? If true, the turtle will not return to the dig after reaching the surface.
 function DTR:return_to_surface(allow_digging, surface_facing, surface_func, dont_return)
   expect(1, allow_digging, "boolean")
@@ -336,7 +336,7 @@ function DTR:return_to_surface(allow_digging, surface_facing, surface_func, dont
   if not self.simulating then
     -- Lock turtle functions while at the surface, otherwise we cannot guarantee deterministic behavior.
     no_turtle()
-    local ok, err = pcall(surface_func)
+    local ok, err = pcall(surface_func, not dont_return)
     restore_turtle()
     if not ok then
       error(err, 2)
