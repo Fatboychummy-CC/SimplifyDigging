@@ -49,6 +49,20 @@ menu:add_list(
 )
 
 menu:add_boolean(
+  "fuel",
+  "Consume Fuel",
+  "Enables consuming fuel items (like coal) from the turtle's inventory, as it finds it underground.",
+  true
+)
+
+menu:add_boolean(
+  "inv_handling",
+  "Inventory",
+  "Enables automatic inventory management during digging. If disabled, will drop everything instead of returning to the surface when full.",
+  true
+)
+
+menu:add_boolean(
   "stairs",
   "Stairs",
   "Whether to place stairs in the staircase (requires stairs in inventory).",
@@ -68,6 +82,22 @@ menu:add_number(
   "The interval (in steps) at which to place torches if enabled.",
   10,
   1
+)
+
+local run_dir = fs.getDir(shell.getRunningProgram())
+menu:add_file(
+  "broadcast_file",
+  "Broadcaster",
+  "A file to handle broadcasting status updates during digging.",
+  fs.combine(run_dir, "lib", "broadcast", "empty.lua")
+)
+
+menu:add_list(
+  "log_level",
+  "Log Level",
+  "Sets the logging level for this operation.",
+  {"debug", "info", "warning", "error"},
+  2
 )
 
 return menu
