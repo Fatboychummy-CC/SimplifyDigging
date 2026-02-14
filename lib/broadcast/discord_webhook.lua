@@ -142,7 +142,8 @@ local function create_message(content)
   return {
     username = ("Turtle %d"):format(DiscordBroadcaster.turtle_id),
     content = content,
-    embeds = {}
+    embeds = {},
+    avatar_url = "https://raw.githubusercontent.com/Fatboychummy-CC/SimplifyDigging/refs/heads/better/images/basic-turtle.png"
   }
 end
 
