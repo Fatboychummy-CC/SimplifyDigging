@@ -323,6 +323,28 @@ local function wrap_dtr(dtr)
 
   ---@return boolean success
   ---@return string? reason
+  function wrapped.back()
+    local ok, err = dtr:back()
+    if err == "bedrock" then
+      wrapped.hit_bedrock = true
+    end
+
+    while not ok do
+      dtr:turn_left()
+      dtr:turn_left()
+      dtr:dig()
+      dtr:turn_left()
+      dtr:turn_left()
+      ok, err = dtr:back()
+    end
+
+    return ok, err
+  end
+
+
+
+  ---@return boolean success
+  ---@return string? reason
   function wrapped.up()
     local ok, err = dtr:up()
     if err == "bedrock" then
@@ -393,6 +415,30 @@ local function wrap_dtr(dtr)
   ---@return string? reason
   function wrapped.dig_down()
     return dtr:dig_down()
+  end
+
+
+
+  ---@return boolean success
+  ---@return string? reason
+  function wrapped.place()
+    return dtr:place()
+  end
+
+
+
+  ---@return boolean success
+  ---@return string? reason
+  function wrapped.place_up()
+    return dtr:place_up()
+  end
+
+
+
+  ---@return boolean success
+  ---@return string? reason
+  function wrapped.place_down()
+    return dtr:place_down()
   end
 
   return wrapped
@@ -480,38 +526,13 @@ end
 
 
 
---- Cuboid digging impl
+--- The function ran at the surface.
+---@param dtr DTR The DTR instance to use for status updates and refueling.
 ---@param broadcaster SimplifyDig.Broadcaster The broadcaster to use for status updates.
-local function dig_cuboid_impl(broadcaster)
-  local dtr = setup_reboot()
-  local wrapped_dtr = wrap_dtr(dtr)
-
-  if dtr:should_simulate() then
-    dtr:start_simulating()
-  end
-
-
-  -- Initialization:
-  -- 1. Determine which way we want to turn based off arguments.
-  -- 2. Determine if we're going up or down based off arguments.
-  local turn = parsed.flags.left and wrapped_dtr.turn_left or wrapped_dtr.turn_right
-  local vertical_move = parsed.flags.up and wrapped_dtr.up or wrapped_dtr.down
-  local duo_vertical_dig = parsed.flags.up and wrapped_dtr.dig_up or wrapped_dtr.dig_down
-  local n_duo_vertical_dig = parsed.flags.up and wrapped_dtr.dig_down or wrapped_dtr.dig_up
-
-  -- Pull the values from arguments
-  local forward_length = tonumber(parsed.options.forwardlength)
-  local width = tonumber(parsed.options.width)
-  local height = parsed.flags.quarry and MAX_HEIGHT or tonumber(parsed.options.height) or math.huge
-  local no_inv = parsed.flags.noinv
-  local fuel = parsed.flags.fuel
-  if parsed.options.loglevel ~= "info" then
-    minilogger.set_log_level(minilogger.LOG_LEVELS[parsed.options.loglevel:upper()])
-  end
-
-  --- The function ran at the surface.
+---@param fuel boolean Whether to attempt to refuel with items in the inventory when at the surface. This should be `fuel or no_inv`.
+local function gen_surface_func(dtr, broadcaster, fuel)
   ---@param returning boolean If we're returning back to the mine when done.
-  local function surface_func(returning)
+  return function(returning)
     broadcaster.status(dtr.state.position, dtr.state.facing, dtr.state.last_fuel)
     while not peripheral.hasType("front", "inventory") do
       log.warn("No inventory in front...")
@@ -527,7 +548,7 @@ local function dig_cuboid_impl(broadcaster)
     broadcaster.state "idle"
 
     while true do
-      drop(dtr, fuel, no_inv)
+      drop(dtr, fuel, false) -- Ignore `no_inv` here.
       if count_slots() == 0 then
         break
       else
@@ -548,6 +569,114 @@ local function dig_cuboid_impl(broadcaster)
       broadcaster.state "return-mine"
     end
   end
+end
+
+
+
+--- Run the moves.
+---@param dtr DTR The DTR instance to use for status updates and refueling.
+---@param wrapped_dtr WrappedDTR The wrapped DTR instance to use for move execution.
+---@param broadcaster SimplifyDig.Broadcaster The broadcaster to use for status updates.
+---@param get_next_move fun():function A function that returns the next move to execute. This allows the move generation to be dynamic and respond to events like hitting bedrock or needing to return to the surface.
+---@param moves table A table of moves to execute, used for calculating completion percentage.
+local function run_moves(dtr, wrapped_dtr, broadcaster, get_next_move, moves)
+  local n_moves = #moves
+
+  dtr:refueled() -- Force dtr to update fuel level after initialization.
+  log.infof("Pre-calculated move list with %d moves.", #moves)
+  local move = 0
+  while #moves > 0 do
+    move = move + 1
+    if not dtr.simulating then
+      if move % 10 == 0 then
+        broadcaster.status(dtr.state.position, dtr.state.facing, dtr.state.last_fuel)
+        broadcaster.completion(1 - #moves / n_moves)
+      elseif move % 3 == 0 then
+        broadcaster.state "digging"
+        broadcaster.keepalive()
+      end
+
+      if move == 420 then
+        broadcaster.state "teapot"
+      end
+    end
+
+    local func = get_next_move()
+
+    --#region debug logging
+    ---@type string?
+    local func_name
+    if func == wrapped_dtr.forward then
+      func_name = "forward"
+    elseif func == wrapped_dtr.turn_left then
+      func_name = "turn_left"
+    elseif func == wrapped_dtr.turn_right then
+      func_name = "turn_right"
+    elseif func == wrapped_dtr.up then
+      func_name = "up"
+    elseif func == wrapped_dtr.down then
+      func_name = "down"
+    elseif func == wrapped_dtr.dig_up then
+      func_name = nil
+    elseif func == wrapped_dtr.dig_down then
+      func_name = nil
+    elseif func == wrapped_dtr.dig then
+      func_name = nil
+    else
+      func_name = "unknown"
+    end
+
+    if func_name then
+      log.debugf("%d (%d): %s", dtr.state.recorded_moves, move, func_name)
+    end
+    --#endregion debug logging
+
+    local success, reason = func()
+
+    if not success and reason == "bedrock" then
+      log.warn("Hit bedrock during move. Marking bedrock reached and returning to surface.")
+      wrapped_dtr.hit_bedrock = true
+    end
+
+    if dtr.simulating and dtr.state.recorded_moves % 100 == 0 then
+      os.queueEvent("quick_yield")
+      os.pullEvent("quick_yield")
+      broadcaster.keepalive()
+    end
+  end
+end
+
+
+
+--- Cuboid digging impl
+---@param broadcaster SimplifyDig.Broadcaster The broadcaster to use for status updates.
+local function dig_cuboid_impl(broadcaster)
+  local dtr = setup_reboot()
+  local wrapped_dtr = wrap_dtr(dtr)
+
+  if dtr:should_simulate() then
+    dtr:start_simulating()
+  end
+
+
+  -- Initialization:
+  -- 1. Determine which way we want to turn based off arguments.
+  -- 2. Determine if we're going up or down based off arguments.
+  local turn = parsed.flags.left and wrapped_dtr.turn_left or wrapped_dtr.turn_right
+  local vertical_move = parsed.flags.up and wrapped_dtr.up or wrapped_dtr.down
+  local duo_vertical_dig = parsed.flags.up and wrapped_dtr.dig_up or wrapped_dtr.dig_down
+  local n_duo_vertical_dig = parsed.flags.up and wrapped_dtr.dig_down or wrapped_dtr.dig_up
+  local surface_func = gen_surface_func(dtr, broadcaster, parsed.flags.fuel or parsed.flags.noinv)
+
+  -- Pull the values from arguments
+  local forward_length = tonumber(parsed.options.forwardlength)
+  local width = tonumber(parsed.options.width)
+  local height = parsed.flags.quarry and MAX_HEIGHT or tonumber(parsed.options.height) or math.huge
+  local no_inv = parsed.flags.noinv
+  local fuel = parsed.flags.fuel
+  if parsed.options.loglevel ~= "info" then
+    minilogger.set_log_level(minilogger.LOG_LEVELS[parsed.options.loglevel:upper()])
+  end
 
   local function return_to_surface()
     broadcaster.state "return-home"
@@ -559,6 +688,7 @@ local function dig_cuboid_impl(broadcaster)
     dtr:return_to_surface(true, 2, surface_func, true)
   end
 
+  ---@type function[]
   local moves = {}
   local n_moves = 0 -- Only used for populating the table
   local function m_insert(f)
@@ -662,72 +792,7 @@ local function dig_cuboid_impl(broadcaster)
     height_remaining = height_remaining - 3
   end
 
-  dtr:refueled() -- Force dtr to update fuel level after initialization.
-  log.infof("Pre-calculated move list with %d moves.", #moves)
-  local move = 0
-  while #moves > 0 do
-    move = move + 1
-    if not dtr.simulating then
-      if move % 10 == 0 then
-        broadcaster.status(dtr.state.position, dtr.state.facing, dtr.state.last_fuel)
-        broadcaster.completion(1 - #moves / n_moves)
-      elseif move % 3 == 0 then
-        broadcaster.state "digging"
-        broadcaster.keepalive()
-      end
-
-      if move == 420 then
-        broadcaster.state "teapot"
-      end
-    end
-
-    local func = get_next_move()
-
-    --#region debug logging
-    ---@type string?
-    local func_name
-    if func == wrapped_dtr.forward then
-      func_name = "forward"
-    elseif func == return_to_surface then
-      func_name = "return_to_surface (has child calls)"
-    elseif func == home then
-      func_name = "home (has child calls)"
-    elseif func == wrapped_dtr.turn_left then
-      func_name = "turn_left"
-    elseif func == wrapped_dtr.turn_right then
-      func_name = "turn_right"
-    elseif func == wrapped_dtr.up then
-      func_name = "up"
-    elseif func == wrapped_dtr.down then
-      func_name = "down"
-    elseif func == wrapped_dtr.dig_up then
-      func_name = nil
-    elseif func == wrapped_dtr.dig_down then
-      func_name = nil
-    elseif func == wrapped_dtr.dig then
-      func_name = nil
-    else
-      func_name = "unknown"
-    end
-
-    if func_name then
-      log.debugf("%d (%d): %s", dtr.state.recorded_moves, move, func_name)
-    end
-    --#endregion debug logging
-
-    local success, reason = func()
-
-    if not success and reason == "bedrock" then
-      log.warn("Hit bedrock during move. Marking bedrock reached and returning to surface.")
-      wrapped_dtr.hit_bedrock = true
-    end
-
-    if dtr.simulating and dtr.state.recorded_moves % 100 == 0 then
-      os.queueEvent("quick_yield")
-      os.pullEvent("quick_yield")
-      broadcaster.keepalive()
-    end
-  end
+  run_moves(dtr, wrapped_dtr, broadcaster, get_next_move, moves)
 end
 
 
@@ -771,9 +836,276 @@ end
 
 
 
+--- Staircase digging impl
+---@param broadcaster SimplifyDig.Broadcaster The broadcaster to use for status updates.
+local function dig_staircase_impl(broadcaster)
+  local dtr = setup_reboot()
+  local wrapped_dtr = wrap_dtr(dtr)
+
+  if dtr:should_simulate() then
+    dtr:start_simulating()
+  end
+
+  -- Pull the values from arguments
+  local forward_length = tonumber(parsed.options.forwardlength)
+  local height = tonumber(parsed.options.height) or 3
+  if height < 3 then
+    error("Height must be at least 3 for staircase digging.", 0)
+  end
+  local place_stairs = parsed.flags.stairs
+  local place_torches = parsed.flags.torches
+  local torch_interval = tonumber(parsed.options.torchinterval) or 10
+  local no_inv = parsed.flags.noinv
+  local fuel = parsed.flags.fuel
+  local down = not parsed.flags.up
+  if parsed.options.loglevel ~= "info" then
+    minilogger.set_log_level(minilogger.LOG_LEVELS[parsed.options.loglevel:upper()])
+  end
+  local surface_func = gen_surface_func(dtr, broadcaster, parsed.flags.fuel or parsed.flags.noinv)
+
+  local function return_to_surface()
+    broadcaster.state "return-home"
+    error("Cannot return right now because we are nerds who haven't implemented stuff yet lmao", 0)
+    ---@TODO We need to do a custom return to surface here, because we need
+    ---      to move in a stair pattern instead of a straight line.
+    --dtr:return_to_surface(true, 2, surface_func)
+  end
+
+  local function home()
+    broadcaster.state "return-home"
+    error("Cannot return right now because we are nerds who haven't implemented stuff yet lmao", 0)
+    --dtr:return_to_surface(true, 2, surface_func, true)
+  end
+
+  ---@param item_name string
+  ---@param match boolean? If true, will match the item name rather than direct comparison.
+  ---@return integer? slot The slot containing the item, or nil if not found.
+  local function find(item_name, match)
+    for i = 1, 16 do
+      local detail = turtle.getItemDetail(i)
+      if detail and (match and string.find(detail.name, item_name) or detail.name == item_name) then
+        return i
+      end
+    end
+    return nil
+  end
+
+  ---@type function[]
+  local moves = {}
+  local n_moves = 0 -- Only used for populating the table
+
+  ---@param f function
+  local function m_insert(f)
+    n_moves = n_moves + 1
+    moves[n_moves] = f
+  end
+
+  local no_torches = false
+  local no_stairs = false
+
+  local function get_torch()
+    local torch_slot = find("minecraft:torch")
+    if not torch_slot then
+      no_torches = true
+      log.warn("No torches found in inventory.")
+      return
+    end
+
+    turtle.select(torch_slot)
+  end
+
+  local function get_stair()
+    local stair_slot = find("stairs", true)
+    if not stair_slot then
+      no_stairs = true
+      log.warn("No stairs found in inventory.")
+      return
+    end
+
+    turtle.select(stair_slot)
+  end
+
+
+  local function get_next_move()
+    -- If we're recovering and we have recorded a return to surface, simulate that return.
+    if dtr:should_return_to_surface() then
+      log.debug("Return to surface caused by DTR recovery.")
+      return return_to_surface
+    end
+
+
+    if not dtr.simulating then
+      -- If we've hit bedrock.
+      if wrapped_dtr.hit_bedrock then
+        log.debug("Return to surface caused by hitting bedrock.")
+        return home
+      end
+
+      -- If the inventory is full, either dump it or return and dump it.
+      if count_slots() == 16 then
+        if no_inv then
+          drop(dtr, fuel, no_inv)
+        else
+          log.debug("Return to surface caused by full inventory.")
+          return return_to_surface
+        end
+      end
+
+      -- If there's no torches, return for more.
+      if place_torches and no_torches then
+        log.debug("Return to surface caused by no torches.")
+        return return_to_surface
+      end
+
+      -- If there's no stairs, return for more.
+      if place_stairs and no_stairs then
+        log.debug("Return to surface caused by no stairs.")
+        return return_to_surface
+      end
+
+      -- If we are running low on fuel, return to the surface.
+      if dtr:should_refuel() then
+        log.debug("Return to surface caused by low fuel.")
+        return return_to_surface
+      end
+    end
+
+    return table.remove(moves, 1)
+  end
+
+  -- Move forward one block to be in the right position.
+  m_insert(wrapped_dtr.forward)
+  if not down then
+    m_insert(wrapped_dtr.up)
+  end
+
+  -- Logic time
+  -- We're going to do this in a rather interesting way.
+  -- Since we can dig 3 blocks at a time (front, top, bottom), we can just dig
+  -- in sets of three. Pretending we are digging up, if we have a height of 6,
+  -- we can dig a staircase upwards, then turn around, go up 3 blocks, then dig
+  -- a staircase downwards. Since the turtle must come back anyways, we can
+  -- just continue this pattern until we reach the desired height.
+
+  local next_torch = math.floor((torch_interval or 10000000) / 2 + 0.5) -- Place the first torch at the halfway point.
+
+  --- Digs a staircase in the current direction, placing stairs and torches if enabled.
+  ---@param torches boolean Whether to place torches in the staircase.
+  ---@param stairs boolean Whether to place stairs in the staircase.
+  ---@param down boolean Whether the staircase is going downwards (as opposed to upwards).
+  ---@param dig_down boolean Whether to dig the block below the turtle.
+  ---@param dig_up boolean Whether to dig the block above the turtle.
+  local function dig_staircase(torches, stairs, down, dig_down, dig_up)
+    for step = 1, forward_length do
+      if dig_down then
+        m_insert(wrapped_dtr.dig_down)
+      end
+      if dig_up then
+        m_insert(wrapped_dtr.dig_up)
+      end
+
+      if torches then
+        next_torch = next_torch - 1
+      end
+
+      if down then
+        if stairs then
+          -- Before we place the stairs, check if we are placing a torch, and if so, dig forward one.
+          if torches and next_torch <= 0 then
+            m_insert(wrapped_dtr.dig)
+          end
+
+          -- Get and place the stair.
+          m_insert(get_stair)
+          m_insert(wrapped_dtr.turn_left)
+          m_insert(wrapped_dtr.turn_left)
+          m_insert(wrapped_dtr.place_down)
+
+          -- If we're placing a torch, stay facing backwards.
+          if next_torch > 0 then
+            m_insert(wrapped_dtr.turn_left)
+            m_insert(wrapped_dtr.turn_left)
+          end
+        end
+        if torches and next_torch <= 0 then
+          -- If we placed a stair, we're already facing backwards.
+          -- However, we need to ensure we are in the right position.
+          if stairs then
+            m_insert(wrapped_dtr.back)
+          else
+            m_insert(wrapped_dtr.forward)
+            m_insert(wrapped_dtr.turn_left)
+            m_insert(wrapped_dtr.turn_left)
+          end
+
+          -- Get and place the torch.
+          m_insert(get_torch)
+          m_insert(wrapped_dtr.place)
+          next_torch = torch_interval
+
+          -- Ensure we face the proper direction.
+          m_insert(wrapped_dtr.turn_left)
+          m_insert(wrapped_dtr.turn_left)
+        else
+          m_insert(wrapped_dtr.forward)
+        end
+
+        if stairs or height > 3 then
+          m_insert(wrapped_dtr.dig_up)
+        end
+
+        m_insert(wrapped_dtr.down)
+      else
+        m_insert(wrapped_dtr.up)
+        m_insert(wrapped_dtr.forward)
+      end
+    end
+  end
+
+  -- Deploy the initial staircase, always at least 3 high.
+  dig_staircase(place_torches, place_stairs, down, true, true)
+
+
+  run_moves(dtr, wrapped_dtr, broadcaster, get_next_move, moves)
+end
+
+
+
 --- Staircase digging function
 local function dig_staircase()
+    log.infof("Starting staircase dig with parameters:\n  forwardlength=%d\n  height=%s\n  up_down=%s\n  fuel=%s\n  noinv=%s\n  stairs=%s\n  torches=%s\n  torchinterval=%s\n  broadcast_file=%s\n  log_level=%s",
+    parsed.options.forwardlength or -1,
+    parsed.options.height or "infinite",
+    parsed.flags.up and "up" or "down",
+    parsed.flags.fuel and "true" or "false",
+    parsed.flags.noinv and "true" or "false",
+    parsed.flags.stairs and "true" or "false",
+    parsed.flags.torches and "true" or "false",
+    parsed.options.torchinterval or 10,
+    parsed.options.broadcast or "None",
+    parsed.options.loglevel or "info"
+  )
+  if not parsed.options.broadcast then
+    parsed.options.broadcast = tostring(pp:at("lib/broadcast"):file("empty.lua"))
+  end
 
+  local broadcaster = require(to_require_path(parsed.options.broadcast)) --[[@as SimplifyDig.Broadcaster]]
+  verify_broadcaster(broadcaster)
+  broadcaster.state "init"
+
+  local ok, err = xpcall(dig_staircase_impl, debug.traceback, broadcaster)
+
+  if not ok then
+    pcall(log.errorf, "Staircase dig failed: %s", err or "unknown error")
+    pcall(broadcaster.error, err or "unknown error")
+    pcall(broadcaster.state, "error")
+    -- Elevate the error
+    error(err, 0)
+  end
+
+  log.info("Staircase dig completed successfully.")
+  broadcaster.complete()
+  cleanup_reboot()
 end
 
 
@@ -796,6 +1128,8 @@ end
 local function main_ui()
   local menus = require "menus"
 
+  local run_dir = fs.getDir(shell.getRunningProgram())
+
   ---@type string?
   local selected_shape
   local shape_option_defaults = {
@@ -809,7 +1143,7 @@ local function main_ui()
     up_down = "down",
     fuel = true,
     noinv = false,
-    broadcast = "",
+    broadcast = fs.combine(run_dir, "lib", "broadcast", "empty.lua"),
     loglevel = "info",
 
     -- Staircase specific
@@ -867,7 +1201,7 @@ local function main_ui()
     parsed.flags.roof = shape_option_overrides.roof or shape_option_defaults.roof
 
     if (type(shape_option_overrides.resume) == "boolean" and shape_option_overrides.resume) or type(shape_option_overrides.resume) == "nil" then
-      parsed.options.save = fs.combine(".simplifydig", ("auto_%s_%d.lua"):format(selected_shape, os.epoch "utc"))
+      parsed.options.save = fs.combine("data/", ("auto_%s_%d.lua"):format(selected_shape, os.epoch "utc"))
     end
     func()
   end
@@ -902,6 +1236,19 @@ local function main_ui()
   end
   reset()
 
+  local function cuboid_defaults()
+    reset()
+  end
+
+  local function staircase_defaults()
+    reset()
+    shape_option_overrides.height = 3
+  end
+
+  local function bridge_defaults()
+    reset()
+  end
+
   ---@type table<string, fun(self: Tamperer, selection: TampererSelection)>
   local selection_callbacks = {
     resume = function(self, selection)
@@ -913,6 +1260,7 @@ local function main_ui()
     dig_type_cuboid = function(self, selection)
       ---@cast selection TampererSelection.Submenu
       if selection.opened then
+        cuboid_defaults()
         selected_shape = "cuboid"
       else
         reset()
@@ -921,6 +1269,7 @@ local function main_ui()
     dig_type_staircase = function(self, selection)
       ---@cast selection TampererSelection.Submenu
       if selection.opened then
+        staircase_defaults()
         selected_shape = "staircase"
       else
         reset()
@@ -929,6 +1278,7 @@ local function main_ui()
     dig_type_bridge = function(self, selection)
       ---@cast selection TampererSelection.Submenu
       if selection.opened then
+        bridge_defaults()
         selected_shape = "bridge"
       else
         reset()
@@ -1009,6 +1359,9 @@ local function main_ui()
       -- Thus, it's run after the program completes, so we can kill the menu
       -- and exit cleanly here.
       menus.main:kill()
+      for _, shape_menu in pairs(menus.shapes) do
+        shape_menu:kill()
+      end
     end
   }
 
