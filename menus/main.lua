@@ -19,7 +19,7 @@ menu:add_submenu(
   cuboid_menu
 )
 
-menu:add_submenu(
+--[[menu:add_submenu(
   "dig_type_staircase",
   "Staircase",
   "Select this to dig a staircase shape.",
@@ -38,7 +38,7 @@ menu:add_file(
   "Load",
   "Load a dig configuration from a file.",
   ""
-)
+)]]
 
 menu:add_callback(
   "refuel",
