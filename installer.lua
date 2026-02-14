@@ -2,6 +2,7 @@
 
 local to_get = {
   "extern:lib/broadcast/basic.lua:https://raw.githubusercontent.com/Fatboychummy-CC/SimplifyDigging/refs/heads/better/lib/broadcast/basic.lua",
+  "extern:lib/broadcast/discord_webhook.lua:https://raw.githubusercontent.com/Fatboychummy-CC/SimplifyDigging/refs/heads/better/lib/broadcast/discord_webhook.lua",
   "extern:lib/broadcast/empty.lua:https://raw.githubusercontent.com/Fatboychummy-CC/SimplifyDigging/refs/heads/better/lib/broadcast/empty.lua",
   "extern:dig.lua:https://raw.githubusercontent.com/Fatboychummy-CC/SimplifyDigging/refs/heads/better/dig.lua",
   "L:lib/filesystem.lua:filesystem.lua",
