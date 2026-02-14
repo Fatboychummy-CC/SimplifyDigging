@@ -502,10 +502,14 @@ local function done_sim(self)
 end
 
 
+---@type fun(self: DTR, movement_direction: DTR.State.MovementDirection): (boolean, string?)
+local move
 
 --- Records data for a movement, and checks simulation state.
 ---@param self DTR
 ---@param movement_direction DTR.State.MovementDirection
+---@return boolean success Whether the move was successful.
+---@return string? reason If the move was not successful, the reason why.
 local function record_movement(self, movement_direction)
   write_movement(self, movement_direction)
   self.state.recorded_moves = self.state.recorded_moves + 1
@@ -528,7 +532,7 @@ local function record_movement(self, movement_direction)
       -- Now, we need to determine if the turtle actually made the last move that was saved.
       if not self.initial_state.moving then
         log.info("Simulation ended, turtle was not moving. Done.")
-        return -- The turtle shut down in between moves, so we're okay.
+        return true -- The turtle shut down in between moves, so we're okay.
       end
 
       local expected_fuel = self.initial_state.last_fuel
@@ -552,7 +556,7 @@ local function record_movement(self, movement_direction)
         log.warn("Simulation ended during a turn which was incomplete. Assuming it is complete.")
         self.state.recorded_moves = self.initial_state.recorded_moves + 1
         post_move(self)
-        return
+        return true
       end
 
       if expected_fuel > actual_fuel then
@@ -560,7 +564,7 @@ local function record_movement(self, movement_direction)
         log.infof("Simulation ended, fuel decreased. Last move was successful.")
         self.state.recorded_moves = self.initial_state.recorded_moves + 1
         post_move(self)
-        return
+        return true
       elseif expected_fuel == actual_fuel then
         -- The move has failed
         log.infof("Simulation ended, fuel level the same. Last move failed.")
@@ -582,11 +586,18 @@ local function record_movement(self, movement_direction)
         write_movement(self, inverse_direction)
         -- Recover the extra fuel used for both movements.
         self.state.last_fuel = self.state.last_fuel + 2
-        return
+
+        -- New problem: The moves list will have the failed move removed from the list.
+        -- Thus, we need to also commit the move again.
+        -- We also need to remove one recorded move, since the failed move should not be recorded.
+        self.state.recorded_moves = self.state.recorded_moves - 1
+        return false, "Unknown"
       end
       error(("Simulation ended, but expected fuel was less than the actual fuel (%d < %d), which is unrecoverable."):format(expected_fuel, actual_fuel))
     end
   end
+
+  return true
 end
 
 
@@ -596,7 +607,7 @@ end
 ---@param movement_direction DTR.State.MovementDirection The direction to move in.
 ---@return boolean success Whether the move was successful.
 ---@return string? reason If the move was not successful, the reason why.
-local function move(self, movement_direction)
+move = function(self, movement_direction)
   if self.simulating and not self.initial_state.recorded_moves then
     error("Initial state must have recorded_moves for simulation.", 2)
   end
@@ -636,7 +647,12 @@ local function move(self, movement_direction)
   ---@cast success boolean
 
   if self.simulating then
-    record_movement(self, movement_direction)
+    local ok, err = record_movement(self, movement_direction)
+    -- While simulating, if we get a false return, it means the last move needs to be *rerun*.
+    -- Thus, returning false will allow the underlying runner to retry.
+    if not ok then
+      return ok, err
+    end
   else
     if success then
       record_movement(self, movement_direction)
