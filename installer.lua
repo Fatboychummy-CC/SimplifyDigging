@@ -46,9 +46,6 @@ local diffs = {
   no_broadcast = {
     "all",
     "-1"
-  },
-  headless = {
-    "1-6"
   }
 }
 --[[
