@@ -17,7 +17,7 @@ local to_get = {
   "I:https://raw.githubusercontent.com/Fatboychummy-CC/Tamperer/refs/heads/better/installer.lua:lib:no_ccryptolib"
 }
 local program_name = "Simplify Digging 2.0"
-local pinestore_id = nil -- Set this to the ID of the pinestore project if you wish to note to pinestore that a download has occurred.
+local pinestore_id = 222 -- Set this to the ID of the pinestore project if you wish to note to pinestore that a download has occurred.
 
 
 -- #################
