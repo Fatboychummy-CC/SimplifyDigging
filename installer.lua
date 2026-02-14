@@ -5,6 +5,7 @@ local to_get = {
   "extern:lib/broadcast/discord_webhook.lua:https://raw.githubusercontent.com/Fatboychummy-CC/SimplifyDigging/refs/heads/better/lib/broadcast/discord_webhook.lua",
   "extern:lib/broadcast/empty.lua:https://raw.githubusercontent.com/Fatboychummy-CC/SimplifyDigging/refs/heads/better/lib/broadcast/empty.lua",
   "extern:dig.lua:https://raw.githubusercontent.com/Fatboychummy-CC/SimplifyDigging/refs/heads/better/dig.lua",
+  "extern:lib/deterministic_turtle_recovery.lua:https://raw.githubusercontent.com/Fatboychummy-CC/SimplifyDigging/refs/heads/better/lib/deterministic_turtle_recovery.lua",
   "L:lib/filesystem.lua:filesystem.lua",
   "L:lib/simple_argparse.lua:simple_argparse.lua",
   "L:lib/minilogger.lua:minilogger.lua",
