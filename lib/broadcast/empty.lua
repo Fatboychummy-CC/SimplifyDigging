@@ -1,7 +1,16 @@
 -- Empty broadcaster for SimplifyDig.
 
+---@alias SimplifyDig.Broadcaster.Message.Types
+---| "keepalive"
+---| "state"
+---| "status"
+---| "completion"
+---| "panic"
+---| "error"
+---| "complete"
+
 ---@class SimplifyDig.Broadcaster.Message
----@field type string The type of the message.
+---@field type SimplifyDig.Broadcaster.Message.Types|string The type of the message.
 ---@field data table The data of the message.
 
 ---@class SimplifyDig.Broadcaster
@@ -13,9 +22,10 @@ local EmptyBroadcaster = {
 
 
 --- Sets up anything the broadcaster needs.
+---@param parsed_args argparse-parsed Arguments passed to the program.
 ---@return boolean success Whether the setup was successful.
 ---@return string? error An error message if the setup failed.
-function EmptyBroadcaster.setup()
+function EmptyBroadcaster.setup(parsed_args)
   EmptyBroadcaster.ready = true
   return true
 end

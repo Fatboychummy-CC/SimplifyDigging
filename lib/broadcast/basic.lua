@@ -33,9 +33,10 @@ end
 
 
 --- Sets up anything the broadcaster needs.
+---@param parsed_args argparse-parsed Arguments passed to the program.
 ---@return boolean success Whether the setup was successful.
 ---@return string? error An error message if the setup failed.
-function BasicBroadcaster.setup()
+function BasicBroadcaster.setup(parsed_args)
   -- Check that a modem is either currently equipped, or is in the inventory.
   if peripheral.hasType("left", "modem") or peripheral.hasType("right", "modem") then
     BasicBroadcaster.modem_side = peripheral.hasType("left", "modem") and "left" or "right"
