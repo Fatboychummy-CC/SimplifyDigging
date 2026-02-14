@@ -7,7 +7,8 @@ local log = require "minilogger".new "Discord"
 local DiscordBroadcaster = {
   ready = false,
   url = "",
-  turtle_id = os.getComputerID()
+  turtle_id = os.getComputerID(),
+  advanced = term.isColor()
 }
 
 
@@ -143,7 +144,8 @@ local function create_message(content)
     username = ("Turtle %d"):format(DiscordBroadcaster.turtle_id),
     content = content,
     embeds = {},
-    avatar_url = "https://raw.githubusercontent.com/Fatboychummy-CC/SimplifyDigging/refs/heads/better/images/basic-turtle.png"
+    avatar_url = DiscordBroadcaster.advanced and "https://raw.githubusercontent.com/Fatboychummy-CC/SimplifyDigging/refs/heads/better/images/advanced-turtle.png"
+      or "https://raw.githubusercontent.com/Fatboychummy-CC/SimplifyDigging/refs/heads/better/images/basic-turtle.png"
   }
 end
 
