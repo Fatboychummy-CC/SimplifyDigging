@@ -517,7 +517,7 @@ local function verify_broadcaster(broadcaster)
   broadcaster_field_check("complete", "function")
   broadcaster_field_check("panic", "function")
   broadcaster_field_check("error", "function")
-  local ok, err = broadcaster.setup()
+  local ok, err = broadcaster.setup(parsed)
 
   if not ok then
     error(("Broadcaster setup failed: %s"):format(err or "unknown error"))
@@ -650,8 +650,8 @@ end
 
 --- Cuboid digging impl
 ---@param broadcaster SimplifyDig.Broadcaster The broadcaster to use for status updates.
-local function dig_cuboid_impl(broadcaster)
-  local dtr = setup_reboot()
+---@param dtr DTR The DTR instance to use for status updates and refueling.
+local function dig_cuboid_impl(broadcaster, dtr)
   local wrapped_dtr = wrap_dtr(dtr)
 
   if dtr:should_simulate() then
@@ -819,11 +819,12 @@ local function dig_cuboid()
   verify_broadcaster(broadcaster)
   broadcaster.state "init"
 
-  local ok, err = xpcall(dig_cuboid_impl, debug.traceback, broadcaster)
+  local dtr = setup_reboot()
+  local ok, err = xpcall(dig_cuboid_impl, debug.traceback, broadcaster, dtr)
 
   if not ok then
     pcall(log.errorf, "Cuboid dig failed: %s", err or "unknown error")
-    pcall(broadcaster.error, err or "unknown error")
+    pcall(broadcaster.error, err or "unknown error", dtr.state.position, dtr.state.facing, dtr.state.last_fuel)
     pcall(broadcaster.state, "error")
     -- Elevate the error
     error(err, 0)
@@ -1327,6 +1328,8 @@ local function main_ui()
       ---@cast selection TampererSelection.List
       local level_str = ({ "debug", "info", "warning", "error" })[selection.value]
       shape_option_overrides.loglevel = level_str
+
+      minilogger.set_log_level(minilogger.LOG_LEVELS[level_str:upper()])
     end,
     stairs = function (self, selection)
       ---@cast selection TampererSelection.Boolean
