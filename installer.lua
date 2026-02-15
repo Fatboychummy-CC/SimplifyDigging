@@ -4,6 +4,7 @@ local to_get = {
   "extern:lib/broadcast/basic.lua:https://raw.githubusercontent.com/Fatboychummy-CC/SimplifyDigging/refs/heads/better/lib/broadcast/basic.lua",
   "extern:lib/broadcast/discord_webhook.lua:https://raw.githubusercontent.com/Fatboychummy-CC/SimplifyDigging/refs/heads/better/lib/broadcast/discord_webhook.lua",
   "extern:lib/broadcast/empty.lua:https://raw.githubusercontent.com/Fatboychummy-CC/SimplifyDigging/refs/heads/better/lib/broadcast/empty.lua",
+  "extern:lib/broadcast/dispatch.lua:https://raw.githubusercontent.com/Fatboychummy-CC/SimplifyDigging/refs/heads/better/lib/broadcast/dispatch.lua",
   "extern:dig.lua:https://raw.githubusercontent.com/Fatboychummy-CC/SimplifyDigging/refs/heads/better/dig.lua",
   "extern:lib/deterministic_turtle_recovery.lua:https://raw.githubusercontent.com/Fatboychummy-CC/SimplifyDigging/refs/heads/better/lib/deterministic_turtle_recovery.lua",
   "L:lib/filesystem.lua:filesystem.lua",
@@ -47,7 +48,8 @@ local diffs = {
   },
   no_broadcast = {
     "all",
-    "-1"
+    "-1",
+    "-2",
   }
 }
 --[[

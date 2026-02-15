@@ -260,11 +260,9 @@ function DiscordBroadcaster.raw(message)
   if message.type == "state" and message.data.state == last_state then return end
   if message.type == "state" then last_state = message.data.state end
 
-  -- Add a random cooldown of 10-30 seconds before we can send this type of
+  -- Add a cooldown of 5 seconds before we can send this type of
   -- message again, to avoid spamming the webhook if something goes wrong.
-  --
-  -- We add the random amount so that not all the messages spam all at once.
-  next_messages[message.type] = os.epoch "utc" + math.random(10000, 30000)
+  next_messages[message.type] = os.epoch "utc" + 5000
 
   local message_obj = create_message("")
   local embed = create_embed(message.type, textutils.serialize(message.data))

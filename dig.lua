@@ -528,16 +528,16 @@ end
 
 --- The function ran at the surface.
 ---@param dtr DTR The DTR instance to use for status updates and refueling.
----@param broadcaster SimplifyDig.Broadcaster The broadcaster to use for status updates.
+---@param dispatch SimplifyDig.Broadcaster.Dispatcher The dispatcher to use for status updates.
 ---@param fuel boolean Whether to attempt to refuel with items in the inventory when at the surface. This should be `fuel or no_inv`.
-local function gen_surface_func(dtr, broadcaster, fuel)
+local function gen_surface_func(dtr, dispatch, fuel)
   ---@param returning boolean If we're returning back to the mine when done.
   return function(returning)
-    broadcaster.status(dtr.state.position, dtr.state.facing, dtr.state.last_fuel)
+    dispatch.status(dtr.state.position, dtr.state.facing, dtr.state.last_fuel)
     while not peripheral.hasType("front", "inventory") do
       log.warn("No inventory in front...")
-      broadcaster.state "stuck"
-      broadcaster.panic(
+      dispatch.state "stuck"
+      dispatch.panic(
         "No inventory in front to dump items into.",
         dtr.state.position,
         dtr.state.facing,
@@ -545,7 +545,7 @@ local function gen_surface_func(dtr, broadcaster, fuel)
       )
       sleep(10)
     end
-    broadcaster.state "idle"
+    dispatch.state "idle"
 
     while true do
       drop(dtr, fuel, false) -- Ignore `no_inv` here.
@@ -553,8 +553,8 @@ local function gen_surface_func(dtr, broadcaster, fuel)
         break
       else
         log.warn("Inventory still not empty after dumping...")
-        broadcaster.state "stuck"
-        broadcaster.panic(
+        dispatch.state "stuck"
+        dispatch.panic(
           "Inventory still not empty after dumping.",
           dtr.state.position,
           dtr.state.facing,
@@ -563,10 +563,10 @@ local function gen_surface_func(dtr, broadcaster, fuel)
         sleep(10)
       end
     end
-    broadcaster.state "idle"
+    dispatch.state "idle"
 
     if returning then
-      broadcaster.state "return-mine"
+      dispatch.state "return-mine"
     end
   end
 end
@@ -576,82 +576,108 @@ end
 --- Run the moves.
 ---@param dtr DTR The DTR instance to use for status updates and refueling.
 ---@param wrapped_dtr WrappedDTR The wrapped DTR instance to use for move execution.
----@param broadcaster SimplifyDig.Broadcaster The broadcaster to use for status updates.
+---@param dispatch SimplifyDig.Broadcaster.Dispatcher The dispatcher to use for status updates.
 ---@param get_next_move fun():function A function that returns the next move to execute. This allows the move generation to be dynamic and respond to events like hitting bedrock or needing to return to the surface.
 ---@param moves table A table of moves to execute, used for calculating completion percentage.
-local function run_moves(dtr, wrapped_dtr, broadcaster, get_next_move, moves)
+local function run_moves(dtr, wrapped_dtr, dispatch, get_next_move, moves)
   local n_moves = #moves
 
   dtr:refueled() -- Force dtr to update fuel level after initialization.
   log.infof("Pre-calculated move list with %d moves.", #moves)
   local move = 0
-  while #moves > 0 do
-    move = move + 1
-    if not dtr.simulating then
-      if move % 10 == 0 then
-        broadcaster.status(dtr.state.position, dtr.state.facing, dtr.state.last_fuel)
-        broadcaster.completion(1 - #moves / n_moves)
-      elseif move % 3 == 0 then
-        broadcaster.state "digging"
-        broadcaster.keepalive()
+
+  local function do_the_moves()
+    while #moves > 0 do
+      dispatch.state "digging"
+      move = move + 1
+      if not dtr.simulating and move == 420 then
+        dispatch.state "teapot"
       end
 
-      if move == 420 then
-        broadcaster.state "teapot"
+      local func = get_next_move()
+
+      --#region debug logging
+      ---@type string?
+      local func_name
+      if func == wrapped_dtr.forward then
+        func_name = "forward"
+      elseif func == wrapped_dtr.turn_left then
+        func_name = "turn_left"
+      elseif func == wrapped_dtr.turn_right then
+        func_name = "turn_right"
+      elseif func == wrapped_dtr.up then
+        func_name = "up"
+      elseif func == wrapped_dtr.down then
+        func_name = "down"
+      elseif func == wrapped_dtr.dig_up then
+        func_name = nil
+      elseif func == wrapped_dtr.dig_down then
+        func_name = nil
+      elseif func == wrapped_dtr.dig then
+        func_name = nil
+      else
+        func_name = "unknown"
       end
-    end
 
-    local func = get_next_move()
+      if func_name then
+        log.debugf("%d (%d): %s", dtr.state.recorded_moves, move, func_name)
+      end
+      --#endregion debug logging
 
-    --#region debug logging
-    ---@type string?
-    local func_name
-    if func == wrapped_dtr.forward then
-      func_name = "forward"
-    elseif func == wrapped_dtr.turn_left then
-      func_name = "turn_left"
-    elseif func == wrapped_dtr.turn_right then
-      func_name = "turn_right"
-    elseif func == wrapped_dtr.up then
-      func_name = "up"
-    elseif func == wrapped_dtr.down then
-      func_name = "down"
-    elseif func == wrapped_dtr.dig_up then
-      func_name = nil
-    elseif func == wrapped_dtr.dig_down then
-      func_name = nil
-    elseif func == wrapped_dtr.dig then
-      func_name = nil
-    else
-      func_name = "unknown"
-    end
+      local success, reason = func()
 
-    if func_name then
-      log.debugf("%d (%d): %s", dtr.state.recorded_moves, move, func_name)
-    end
-    --#endregion debug logging
+      if not success and reason == "bedrock" then
+        log.warn("Hit bedrock during move. Marking bedrock reached and returning to surface.")
+        wrapped_dtr.hit_bedrock = true
+      end
 
-    local success, reason = func()
-
-    if not success and reason == "bedrock" then
-      log.warn("Hit bedrock during move. Marking bedrock reached and returning to surface.")
-      wrapped_dtr.hit_bedrock = true
-    end
-
-    if dtr.simulating and dtr.state.recorded_moves % 100 == 0 then
-      os.queueEvent("quick_yield")
-      os.pullEvent("quick_yield")
-      broadcaster.keepalive()
+      if dtr.simulating and dtr.state.recorded_moves % 100 == 0 then
+        os.queueEvent("quick_yield")
+        os.pullEvent("quick_yield")
+      end
     end
   end
+
+  -- Returns a value between 0.25 and 1.25
+  local function random_offset_time()
+    return math.random() + 0.25
+  end
+
+  local function status_update_loop()
+    while true do
+      sleep((dispatch.TIMEOUTS.status / 1000) + random_offset_time())
+      dispatch.status(dtr.state.position, dtr.state.facing, dtr.state.last_fuel)
+    end
+  end
+
+  local function keepalive_loop()
+    while true do
+      sleep((dispatch.TIMEOUTS.keepalive / 1000) + random_offset_time())
+      dispatch.keepalive()
+    end
+  end
+
+  local function completion_loop()
+    while true do
+      sleep((dispatch.TIMEOUTS.completion / 1000) + random_offset_time())
+      dispatch.completion(1 - #moves / n_moves)
+    end
+  end
+
+  parallel.waitForAny(
+    do_the_moves,
+    status_update_loop,
+    completion_loop,
+    keepalive_loop
+  )
 end
 
 
 
 --- Cuboid digging impl
----@param broadcaster SimplifyDig.Broadcaster The broadcaster to use for status updates.
+---@param dispatch SimplifyDig.Broadcaster.Dispatcher The broadcast dispatcher to use for status updates.
 ---@param dtr DTR The DTR instance to use for status updates and refueling.
-local function dig_cuboid_impl(broadcaster, dtr)
+local function dig_cuboid_impl(dispatch, dtr)
   local wrapped_dtr = wrap_dtr(dtr)
 
   if dtr:should_simulate() then
@@ -666,7 +692,7 @@ local function dig_cuboid_impl(broadcaster, dtr)
   local vertical_move = parsed.flags.up and wrapped_dtr.up or wrapped_dtr.down
   local duo_vertical_dig = parsed.flags.up and wrapped_dtr.dig_up or wrapped_dtr.dig_down
   local n_duo_vertical_dig = parsed.flags.up and wrapped_dtr.dig_down or wrapped_dtr.dig_up
-  local surface_func = gen_surface_func(dtr, broadcaster, parsed.flags.fuel or parsed.flags.noinv)
+  local surface_func = gen_surface_func(dtr, dispatch, parsed.flags.fuel or parsed.flags.noinv)
 
   -- Pull the values from arguments
   local forward_length = tonumber(parsed.options.forwardlength)
@@ -679,12 +705,12 @@ local function dig_cuboid_impl(broadcaster, dtr)
   end
 
   local function return_to_surface()
-    broadcaster.state "return-home"
+    dispatch.state "return-home"
     dtr:return_to_surface(true, 2, surface_func)
   end
 
   local function home()
-    broadcaster.state "return-home"
+    dispatch.state "return-home"
     dtr:return_to_surface(true, 2, surface_func, true)
   end
 
@@ -792,7 +818,7 @@ local function dig_cuboid_impl(broadcaster, dtr)
     height_remaining = height_remaining - 3
   end
 
-  run_moves(dtr, wrapped_dtr, broadcaster, get_next_move, moves)
+  run_moves(dtr, wrapped_dtr, dispatch, get_next_move, moves)
 end
 
 
@@ -818,28 +844,30 @@ local function dig_cuboid()
   local broadcaster = require(to_require_path(parsed.options.broadcast)) --[[@as SimplifyDig.Broadcaster]]
   verify_broadcaster(broadcaster)
   broadcaster.state "init"
+  local dispatch = require "broadcast.dispatch"
+  dispatch.set_broadcaster(broadcaster)
 
   local dtr = setup_reboot()
-  local ok, err = xpcall(dig_cuboid_impl, debug.traceback, broadcaster, dtr)
+  local ok, err = xpcall(dig_cuboid_impl, debug.traceback, dispatch, dtr)
 
   if not ok then
     pcall(log.errorf, "Cuboid dig failed: %s", err or "unknown error")
-    pcall(broadcaster.error, err or "unknown error", dtr.state.position, dtr.state.facing, dtr.state.last_fuel)
-    pcall(broadcaster.state, "error")
+    pcall(dispatch.error, err or "unknown error", dtr.state.position, dtr.state.facing, dtr.state.last_fuel)
+    pcall(dispatch.state, "error")
     -- Elevate the error
     error(err, 0)
   end
 
   log.info("Cuboid dig completed successfully.")
-  broadcaster.complete()
+  dispatch.complete()
   cleanup_reboot()
 end
 
 
 
 --- Staircase digging impl
----@param broadcaster SimplifyDig.Broadcaster The broadcaster to use for status updates.
-local function dig_staircase_impl(broadcaster)
+---@param dispatch SimplifyDig.Broadcaster.Dispatcher The broadcaster to use for status updates.
+local function dig_staircase_impl(dispatch)
   local dtr = setup_reboot()
   local wrapped_dtr = wrap_dtr(dtr)
 
@@ -862,10 +890,10 @@ local function dig_staircase_impl(broadcaster)
   if parsed.options.loglevel ~= "info" then
     minilogger.set_log_level(minilogger.LOG_LEVELS[parsed.options.loglevel:upper()])
   end
-  local surface_func = gen_surface_func(dtr, broadcaster, parsed.flags.fuel or parsed.flags.noinv)
+  local surface_func = gen_surface_func(dtr, dispatch, parsed.flags.fuel or parsed.flags.noinv)
 
   local function return_to_surface()
-    broadcaster.state "return-home"
+    dispatch.state "return-home"
     error("Cannot return right now because we are nerds who haven't implemented stuff yet lmao", 0)
     ---@TODO We need to do a custom return to surface here, because we need
     ---      to move in a stair pattern instead of a straight line.
@@ -873,7 +901,7 @@ local function dig_staircase_impl(broadcaster)
   end
 
   local function home()
-    broadcaster.state "return-home"
+    dispatch.state "return-home"
     error("Cannot return right now because we are nerds who haven't implemented stuff yet lmao", 0)
     --dtr:return_to_surface(true, 2, surface_func, true)
   end
@@ -1067,7 +1095,7 @@ local function dig_staircase_impl(broadcaster)
   dig_staircase(place_torches, place_stairs, down, true, true)
 
 
-  run_moves(dtr, wrapped_dtr, broadcaster, get_next_move, moves)
+  run_moves(dtr, wrapped_dtr, dispatch, get_next_move, moves)
 end
 
 
@@ -1093,19 +1121,21 @@ local function dig_staircase()
   local broadcaster = require(to_require_path(parsed.options.broadcast)) --[[@as SimplifyDig.Broadcaster]]
   verify_broadcaster(broadcaster)
   broadcaster.state "init"
+  local dispatch = require "broadcast.dispatch"
+  dispatch.set_broadcaster(broadcaster)
 
-  local ok, err = xpcall(dig_staircase_impl, debug.traceback, broadcaster)
+  local ok, err = xpcall(dig_staircase_impl, debug.traceback, dispatch)
 
   if not ok then
     pcall(log.errorf, "Staircase dig failed: %s", err or "unknown error")
-    pcall(broadcaster.error, err or "unknown error")
-    pcall(broadcaster.state, "error")
+    pcall(dispatch.error, err or "unknown error")
+    pcall(dispatch.state, "error")
     -- Elevate the error
     error(err, 0)
   end
 
   log.info("Staircase dig completed successfully.")
-  broadcaster.complete()
+  dispatch.complete()
   cleanup_reboot()
 end
 
