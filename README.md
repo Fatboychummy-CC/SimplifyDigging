@@ -6,7 +6,7 @@
 SimplifyDigging is a ComputerCraft program designed to make digging various shapes with a turtle easy and efficient.
 
 ## Features
-- Dig cuboids, staircases, and quarries.
+- Dig cuboids, and staircases.
 - Place bridges across gaps.
 - User-friendly interface.
 - Customizable dimensions for each shape.
@@ -54,24 +54,17 @@ This command would start digging a cuboid of dimensions 10x5x3, oriented to the 
 > They are mutually exclusive; you should only use one or the other.
 
 ### Command Reference
+Originally, this program used multiple inline arguments, followed by flags
+and options for other settings. However, this proved to be annoying to work with
+programmatically (as we need to reconstruct the arguments passed to the program
+from the parsed object), so now the program only takes flags and options.
 
-- `dig.lua cuboid <forward length> <width> [height] [flags] [options=values]`
-  - Digs a cuboid with the specified dimensions.
-  - If height is not specified, it will dig until it hits bedrock.
-  - The turtle will dig to the right and downwards by default.
-  - Alias: `cube`
-  - Alias: `box`
-  - Alias: `tunnel`
-  - Alias: `quarry`
-- `dig.lua staircase <steps> [passage height=3] [flags] [options=values]`
-  - Digs a staircase with the specified number of steps.
-  - The staircase will go downwards by default, and is only one block wide.
-  - Alias: `stair`
-  - Alias: `stairs`
-- `dig.lua bridge <length> [flags] [options=values]`
-  - Sets a bridge with the specified length.
-  - The turtle will only go straight, stopping when it hits any block in the way
-    or the specified length, whatever comes first.
+The only required option is `--shape`, but other options may be required
+depending on the shape you want to dig and the broadcaster you want to use. 
+
+```sh
+dig.lua --shape=<shape> <other flags/options>
+```
 
 #### Flag Reference
 - `--left`/`-l`
@@ -86,22 +79,45 @@ This command would start digging a cuboid of dimensions 10x5x3, oriented to the 
   - Allows the turtle to refuel itself automatically on items it finds underground (like coal, etc.).
   - By default, the turtle will not refuel itself to avoid consuming valuable items.
   - If the turtle has an empty bucket in its inventory, it will also use that to collect lava for refueling.
-- `--no-inv`/`-n`
+- `--noinv`/`-n`
   - Disables automatic inventory management. Instead, the turtle will dump every item it collects.
 
 #### Option Reference
-- `--file="<path>"`
+- `--shape=<shape>`
+  - Specifies the shape to dig. Valid shapes are:
+    - `cuboid`
+    - `staircase` (WIP)
+    - `bridge` (WIP)
+- `--file=<path>`
   - Specifies the path to an existing state file to load.
-- `--save="<path>"`
+- `--save=<path>`
   - Specifies the path to create a new state file for saving progress.
-- `--broadcast="</path/to/handler>"`
+- `--broadcast=</path/to/handler>`
   - Specifies a path to a file that will handle broadcasting status updates from the turtle.
   - A basic handler can be found in [`lib/broadcast_handler.lua`](lib/broadcast_handler.lua), but you can specify your own for security or customization reasons.
   - Broadcasts are useful for monitoring the turtle's progress remotely, especially if it gets stuck or needs attention.
-- `--loglevel="<level>"`
+- `--loglevel=<level>`
   - Sets the logging level for the program. Valid levels are:
     - `debug`
     - `info`
     - `warning`
     - `error`
   - The default logging level is `info`.
+
+
+### Broadcaster-specific arguments
+Some broadcasters may require additional arguments to function properly. For
+example, the `discord_webhook` broadcaster requires a `webhookurl` argument
+to specify the URL of the Discord webhook to send updates to.
+
+The broadcaster will prompt you on initialization if you don't provide it, but
+this way you can force it to use a specific value without having to go through
+the prompt every time. A default option value within the UI is also provided.
+
+- `basic`
+  - `broadcastchannel=<integer>`
+    - Specifies the modem channel to broadcast updates on. Must be a valid integer.
+    - Defaults to `0xC0DE` (49374) if not specified.
+- `discord_webhook`
+  - `--webhookurl=<url>`
+    - Specifies the Discord webhook URL to send updates to.
