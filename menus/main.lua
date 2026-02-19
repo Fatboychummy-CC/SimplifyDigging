@@ -40,6 +40,19 @@ menu:add_file(
   ""
 )]]
 
+menu:add_file(
+  "default_broadcaster",
+  "Broadcaster",
+  "Select the default broadcaster to use. This will be saved for future runs."
+)
+
+menu:add_string(
+  "default_broadcaster_arguments",
+  "Arguments",
+  "The arguments to pass to the default broadcaster. This will be saved for future runs.",
+  ""
+)
+
 menu:add_callback(
   "refuel",
   "Refuel",

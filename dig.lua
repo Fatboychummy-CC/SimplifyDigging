@@ -658,6 +658,13 @@ local function run_moves(dtr, wrapped_dtr, dispatch, get_next_move, moves)
   end
 
   local function completion_loop()
+    if parsed.flags.quarry then
+      -- Do not send completion updates for quarry mode, as it is uncertain how deep the turtle needs to dig.
+      while true do
+        sleep(999)
+      end
+    end
+
     while true do
       sleep((dispatch.TIMEOUTS.completion / 1000) + random_offset_time())
       dispatch.completion(1 - #moves / n_moves)
@@ -673,6 +680,8 @@ local function run_moves(dtr, wrapped_dtr, dispatch, get_next_move, moves)
 end
 
 
+
+--#region Cuboid
 
 --- Cuboid digging impl
 ---@param dispatch SimplifyDig.Broadcaster.Dispatcher The broadcast dispatcher to use for status updates.
@@ -843,9 +852,10 @@ local function dig_cuboid()
 
   local broadcaster = require(to_require_path(parsed.options.broadcast)) --[[@as SimplifyDig.Broadcaster]]
   verify_broadcaster(broadcaster)
-  broadcaster.state "init"
   local dispatch = require "broadcast.dispatch"
   dispatch.set_broadcaster(broadcaster)
+  dispatch.state "init"
+  dispatch.init(parsed)
 
   local dtr = setup_reboot()
   local ok, err = xpcall(dig_cuboid_impl, debug.traceback, dispatch, dtr)
@@ -863,7 +873,11 @@ local function dig_cuboid()
   cleanup_reboot()
 end
 
+--#endregion Cuboid
 
+
+
+--#region Staircase
 
 --- Staircase digging impl
 ---@param dispatch SimplifyDig.Broadcaster.Dispatcher The broadcaster to use for status updates.
@@ -1120,9 +1134,9 @@ local function dig_staircase()
 
   local broadcaster = require(to_require_path(parsed.options.broadcast)) --[[@as SimplifyDig.Broadcaster]]
   verify_broadcaster(broadcaster)
-  broadcaster.state "init"
   local dispatch = require "broadcast.dispatch"
   dispatch.set_broadcaster(broadcaster)
+  dispatch.state "init"
 
   local ok, err = xpcall(dig_staircase_impl, debug.traceback, dispatch)
 
@@ -1139,12 +1153,18 @@ local function dig_staircase()
   cleanup_reboot()
 end
 
+--#endregion Staircase
 
+
+
+--#region Bridge
 
 --- Bridge digging function
 local function dig_bridge()
 
 end
+
+---#endregion Bridge
 
 
 
@@ -1175,6 +1195,7 @@ local function main_ui()
     fuel = true,
     noinv = false,
     broadcast = fs.combine(run_dir, "lib", "broadcast", "empty.lua"),
+    broadcast_arguments = "",
     loglevel = "info",
 
     -- Staircase specific
@@ -1186,7 +1207,9 @@ local function main_ui()
     safemode = false,
     roof = false,
   }
-  local shape_option_overrides = {}
+  local shape_option_overrides = setmetatable({}, {
+    __index = shape_option_defaults
+  })
 
 
   -- Override the callbacks within the menus to call the appropriate `dig_*` function.
@@ -1201,19 +1224,19 @@ local function main_ui()
 
     -- Set the arguments table based on the current menu selections.
     parsed.options.shape = selected_shape
-    parsed.options.forwardlength = tostring(shape_option_overrides.forwardlength or shape_option_defaults.forwardlength)
-    parsed.options.width = tostring(shape_option_overrides.width or shape_option_defaults.width)
-    parsed.options.height = tostring(shape_option_overrides.height or shape_option_defaults.height)
-    parsed.flags.quarry = shape_option_overrides.quarry or shape_option_defaults.quarry
+    parsed.options.forwardlength = tostring(shape_option_overrides.forwardlength)
+    parsed.options.width = tostring(shape_option_overrides.width)
+    parsed.options.height = tostring(shape_option_overrides.height)
+    parsed.flags.quarry = shape_option_overrides.quarry
 
-    if (shape_option_overrides.left_right or shape_option_defaults.left_right) == "left" then
+    if (shape_option_overrides.left_right) == "left" then
       parsed.flags.left = true
       parsed.flags.right = false
     else
       parsed.flags.left = false
       parsed.flags.right = true
     end
-    if (shape_option_overrides.up_down or shape_option_defaults.up_down) == "up" then
+    if (shape_option_overrides.up_down) == "up" then
       parsed.flags.up = true
       parsed.flags.down = false
     else
@@ -1221,15 +1244,26 @@ local function main_ui()
       parsed.flags.down = true
     end
 
-    parsed.options.broadcast = tostring(shape_option_overrides.broadcast or shape_option_defaults.broadcast)
-    parsed.options.loglevel = tostring(shape_option_overrides.loglevel or shape_option_defaults.loglevel)
-    parsed.options.torchinterval = tostring(shape_option_overrides.torchinterval or shape_option_defaults.torchinterval)
-    parsed.flags.fuel = shape_option_overrides.fuel or shape_option_defaults.fuel
-    parsed.flags.noinv = shape_option_overrides.noinv or shape_option_defaults.noinv
-    parsed.flags.stairs = shape_option_overrides.stairs or shape_option_defaults.stairs
-    parsed.flags.torches = shape_option_overrides.torches or shape_option_defaults.torches
-    parsed.flags.safemode = shape_option_overrides.safemode or shape_option_defaults.safemode
-    parsed.flags.roof = shape_option_overrides.roof or shape_option_defaults.roof
+    parsed.options.broadcast = tostring(shape_option_overrides.broadcast)
+    parsed.options.loglevel = tostring(shape_option_overrides.loglevel)
+    parsed.options.torchinterval = tostring(shape_option_overrides.torchinterval)
+    parsed.flags.fuel = shape_option_overrides.fuel
+    parsed.flags.noinv = shape_option_overrides.noinv
+    parsed.flags.stairs = shape_option_overrides.stairs
+    parsed.flags.torches = shape_option_overrides.torches
+    parsed.flags.safemode = shape_option_overrides.safemode
+    parsed.flags.roof = shape_option_overrides.roof
+
+    if shape_option_defaults.broadcast_arguments ~= "" then
+      for arg in string.gmatch(shape_option_defaults.broadcast_arguments, "[^,]+") do
+        local key, value = arg:match("^%s*(.-)%s*=%s*(.-)%s*$")
+        if key and value then
+          parsed.options[key] = value
+        else
+          log.warnf("Invalid broadcast argument: '%s'. Arguments must be in the format 'key=value'.", arg)
+        end
+      end
+    end
 
     if (type(shape_option_overrides.resume) == "boolean" and shape_option_overrides.resume) or type(shape_option_overrides.resume) == "nil" then
       parsed.options.save = fs.combine("data/", ("auto_%s_%d.lua"):format(selected_shape, os.epoch "utc"))
@@ -1261,9 +1295,9 @@ local function main_ui()
 
   local function reset()
     selected_shape = nil
-    for k, v in pairs(shape_option_defaults) do
-      shape_option_overrides[k] = v
-    end
+    shape_option_overrides = setmetatable({}, {
+      __index = shape_option_defaults
+    })
   end
   reset()
 
@@ -1278,6 +1312,17 @@ local function main_ui()
 
   local function bridge_defaults()
     reset()
+  end
+
+  local function set_default_broadcaster(path)
+    shape_option_defaults.broadcast = path
+    menus.main:get_selection("default_broadcaster").value = path
+    menus.shapes.cuboid:get_selection("broadcast_file").value = path
+    menus.shapes.staircase:get_selection("broadcast_file").value = path
+    menus.shapes.bridge:get_selection("broadcast_file").value = path
+
+    settings.set("simplifydig.default_broadcaster", path)
+    settings.save()
   end
 
   ---@type table<string, fun(self: Tamperer, selection: TampererSelection)>
@@ -1350,6 +1395,17 @@ local function main_ui()
       -- We display this to the user inverse.
       shape_option_overrides.noinv = not selection.value
     end,
+    default_broadcaster = function(self, selection)
+      ---@cast selection TampererSelection.File
+      set_default_broadcaster(selection.value)
+    end,
+    default_broadcaster_arguments = function(self, selection)
+      ---@cast selection TampererSelection.String
+      shape_option_defaults.broadcast_arguments = selection.value
+
+      settings.set("simplifydig.default_broadcaster_arguments", selection.value)
+      settings.save()
+    end,
     broadcast_file = function (self, selection)
       ---@cast selection TampererSelection.String
       shape_option_overrides.broadcast = selection.value
@@ -1398,6 +1454,17 @@ local function main_ui()
     end
   }
 
+  settings.load()
+  if settings.get("simplifydig.default_broadcaster") then
+    set_default_broadcaster(settings.get("simplifydig.default_broadcaster"))
+  else
+    set_default_broadcaster(shape_option_defaults.broadcast)
+  end
+  if settings.get("simplifydig.default_broadcaster_arguments") then
+    shape_option_defaults.broadcast_arguments = settings.get("simplifydig.default_broadcaster_arguments")
+    menus.main:get_selection("default_broadcaster_arguments").value = settings.get("simplifydig.default_broadcaster_arguments")
+  end
+
   menus.main:set_on_change_recursive(function (self, selection)
     if selection_callbacks[selection.i_label] then
       selection_callbacks[selection.i_label](self, selection)
@@ -1437,8 +1504,10 @@ local ok, err = xpcall(function()
 
     dig_cuboid()
   elseif shape_type == "staircase" then
+    error("Not yet implemented.")
     dig_staircase()
   elseif shape_type == "bridge" then
+    error("Not yet implemented.")
     dig_bridge()
   elseif not shape_type then
     main_ui()

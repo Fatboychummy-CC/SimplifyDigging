@@ -92,6 +92,17 @@ end
 
 
 
+--- Sends the init message.
+--- This message contains information about the dig (size, quarrying, etc) and
+--- is sent once at the start of the dig.
+---@param program_arguments argparse-parsed The arguments passed to the program.
+function Dispatcher.init(program_arguments)
+  check_dispatcher()
+  Dispatcher.broadcaster.init(program_arguments)
+end
+
+
+
 --- Limit broadcaster keepalive messages to once per 15 seconds.
 function Dispatcher.keepalive()
   check_dispatcher()

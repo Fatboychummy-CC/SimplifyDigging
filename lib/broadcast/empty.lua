@@ -38,6 +38,14 @@ function EmptyBroadcaster.raw(message) end
 
 
 
+--- Sends the init message.
+--- This message contains information about the dig (size, quarrying, etc) and
+--- is sent once at the start of the dig.
+---@param program_arguments argparse-parsed The arguments passed to the program.
+function EmptyBroadcaster.init(program_arguments) end
+
+
+
 ---@class SimplifyDig.Broadcaster.Message.KeepAlive : SimplifyDig.Broadcaster.Message
 ---@field type "keepalive"
 ---@field data SimplifyDig.Broadcaster.Message.KeepAlive.Data

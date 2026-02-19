@@ -168,6 +168,21 @@ end
 
 
 
+--- Create an embed field given a name and value.
+---@param name string The name of the field.
+---@param value string The value of the field.
+---@param inline boolean? Whether the field should be displayed inline. Defaults to false.
+---@return SimplifyDig.Broadcaster.DiscordWebhook.WebhookData.Embed.Field field The generated embed field object.
+local function create_embed_field(name, value, inline)
+  return {
+    name = name,
+    value = value,
+    inline = inline or false,
+  }
+end
+
+
+
 --- Sets up anything the broadcaster needs.
 ---@param parsed_args argparse-parsed Arguments passed to the program.
 ---@return boolean success Whether the setup was successful.
@@ -353,6 +368,53 @@ function DiscordBroadcaster.raw(message)
     embed.title = "Dig Complete"
     embed.color = 0x00ff00 -- Green
     embed.description = "The dig is complete!"
+  elseif message.type == "init" then
+    embed.title = "Dig Started"
+    embed.color = 0x00ff00 -- Green
+    embed.description = "The dig has started!"
+
+    local parsed = message.data.program_arguments --[[@as argparse-parsed]]
+
+    embed.fields = {}
+    table.insert(embed.fields, create_embed_field(
+      "Shape",
+      parsed.options.shape,
+      true
+    ))
+
+    ---@TODO In the future when other shapes are implemented, we will need to
+    --- handle multiple shapes here.
+    table.insert(embed.fields, create_embed_field(
+      "Size",
+      ("%d x %d x %d"):format(parsed.options.forwardlength, parsed.options.width, parsed.options.height),
+      true
+    ))
+
+    table.insert(embed.fields, create_embed_field(
+      "Quarrying",
+      parsed.options.quarry and "Yes" or "No",
+      true
+    ))
+
+
+    local function deep_copy(v)
+      if type(v) ~= "table" then return v end
+      local copy = {}
+      for k, val in pairs(v) do
+        copy[k] = deep_copy(val)
+      end
+      return copy
+    end
+
+    local parsed_clone = deep_copy(parsed)
+    if parsed_clone.options.webhookurl then
+      parsed_clone.options.webhookurl = "[REDACTED]"
+    end
+
+    table.insert(embed.fields, create_embed_field(
+      "Raw Arguments",
+      "```\n" .. textutils.serialize(parsed_clone):sub(1, 1000) .. "\n```"
+    ))
   end
 
   -- Send the message to the webhook.
@@ -364,6 +426,23 @@ function DiscordBroadcaster.raw(message)
 
   log.debugf("Message sent to webhook successfully: %s", textutils.serialize(message_obj, {compact=true}))
 end
+
+
+
+--- Sends the init message.
+--- This message contains information about the dig (size, quarrying, etc) and
+--- is sent once at the start of the dig.
+---@param program_arguments argparse-parsed The arguments passed to the program.
+function DiscordBroadcaster.init(program_arguments)
+  DiscordBroadcaster.raw {
+    type = "init",
+    data = {
+      program_arguments = program_arguments,
+    },
+  }
+end
+
+
 
 --- Broadcast a keepalive message.
 function DiscordBroadcaster.keepalive()

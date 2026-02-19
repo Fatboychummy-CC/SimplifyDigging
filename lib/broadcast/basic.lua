@@ -71,6 +71,14 @@ function BasicBroadcaster.setup(parsed_args)
       turtle.equipRight()
     end
 
+    if parsed_args.options.broadcastchannel then
+      local n = tonumber(parsed_args.options.broadcastchannel)
+      if not n or n < 0 or n > 65535 or n % 1 ~= 0 then
+        return false, "Broadcast channel must be an integer between 0 and 65535."
+      end
+      BasicBroadcaster.CHANNEL_SEND = n
+    end
+
     BasicBroadcaster.ready = true
     return true
   end
@@ -115,6 +123,21 @@ function BasicBroadcaster.raw(message)
     0, -- reply channel, not used
     message
   )
+end
+
+
+
+--- Sends the init message.
+--- This message contains information about the dig (size, quarrying, etc) and
+--- is sent once at the start of the dig.
+---@param program_arguments argparse-parsed The arguments passed to the program.
+function BasicBroadcaster.init(program_arguments)
+  BasicBroadcaster.raw {
+    type = "init",
+    data = {
+      program_arguments = program_arguments,
+    },
+  }
 end
 
 

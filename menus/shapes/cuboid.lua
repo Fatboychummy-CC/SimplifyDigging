@@ -85,12 +85,11 @@ menu:add_boolean(
   true
 )
 
-local run_dir = fs.getDir(shell.getRunningProgram())
 menu:add_file(
   "broadcast_file",
   "Broadcaster",
   "A file to handle broadcasting status updates during digging.",
-  fs.combine(run_dir, "lib", "broadcast", "empty.lua")
+  ""
 )
 
 menu:add_list(
