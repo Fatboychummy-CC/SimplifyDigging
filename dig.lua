@@ -590,7 +590,7 @@ local function run_moves(dtr, wrapped_dtr, dispatch, get_next_move, moves)
     while #moves > 0 do
       dispatch.state "digging"
       move = move + 1
-      if not dtr.simulating and move == 420 then
+      if not dtr.simulating and move == 418 then
         dispatch.state "teapot"
       end
 
