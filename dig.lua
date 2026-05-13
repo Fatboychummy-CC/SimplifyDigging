@@ -687,6 +687,10 @@ end
 ---@param dispatch SimplifyDig.Broadcaster.Dispatcher The broadcast dispatcher to use for status updates.
 ---@param dtr DTR The DTR instance to use for status updates and refueling.
 local function dig_cuboid_impl(dispatch, dtr)
+  if not dtr then
+    error("dig_cuboid_impl received nil dtr parameter", 0)
+  end
+  log.infof("dig_cuboid_impl called with dtr: %s", tostring(dtr))
   local wrapped_dtr = wrap_dtr(dtr)
 
   if dtr:should_simulate() then
@@ -858,6 +862,10 @@ local function dig_cuboid()
   dispatch.init(parsed)
 
   local dtr = setup_reboot()
+  if not dtr then
+    error("setup_reboot() returned nil", 0)
+  end
+  log.infof("DTR instance created: %s", tostring(dtr))
   local ok, err = xpcall(dig_cuboid_impl, debug.traceback, dispatch, dtr)
 
   if not ok then
